@@ -8,6 +8,7 @@
 #include "prompt.h"
 #include "parser.h"
 #include "commands.h"
+#include "redirection.h"
 
 char g_shell_home[PATH_MAX];
 char g_shell_prev[PATH_MAX] = {0}; // Previous directory for hop -
@@ -51,18 +52,46 @@ int main(void) {
             n--;
         }
 
-        // A.3: Parse and execute the command
-        if (strlen(line) > 0) {  // Only parse non-empty input
-            if (parse_command(line) != 0) {
-                write(STDOUT_FILENO, "Invalid Syntax!\n", 16);
+// A.3: Parse and execute the command
+if (strlen(line) > 0) {  // Only parse non-empty input
+    if (parse_command(line) != 0) {
+        write(STDOUT_FILENO, "Invalid Syntax!\n", 16);
+    } else {
+        // Add to log if it's not a log command and not identical to previous
+        if (!log_contains_log_command(line)) {
+            log_add_command(line);
+        }
+        
+        // Check if command has pipes
+        if (strchr(line, '|') != NULL) {
+            // Parse and execute as pipeline
+            command_pipeline_t pipeline;
+            if (parse_pipeline(line, &pipeline) == 0) {
+                execute_pipeline(&pipeline);
+                cleanup_pipeline(&pipeline);
             } else {
-                // Add to log if it's not a log command and not identical to previous
-                if (!log_contains_log_command(line)) {
-                    log_add_command(line);
+                // Pipeline parsing failed, try single command
+                parsed_command_t cmd;
+                if (parse_command_with_redirection(line, &cmd) == 0) {
+                    execute_command_with_redirection(&cmd);
+                    cleanup_parsed_command(&cmd);
+                } else {
+                    execute_command(line);
                 }
+            }
+        } else {
+            // No pipes, try single command with redirection
+            parsed_command_t cmd;
+            if (parse_command_with_redirection(line, &cmd) == 0) {
+                execute_command_with_redirection(&cmd);
+                cleanup_parsed_command(&cmd);
+            } else {
+                // Fallback to original execution
                 execute_command(line);
             }
         }
+    }
+}
                   
         free(line);
         // Loop continues, which will display prompt again

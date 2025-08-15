@@ -35,6 +35,7 @@ static const char *parse_input(const char *str) {
     if (*str != '<') return NULL;
     
     str++; // consume '<'
+    str = skip_whitespace(str); // Handle space after <
     return parse_name(str);
 }
 
@@ -47,6 +48,7 @@ static const char *parse_output(const char *str) {
     if (*str == '>') {
         str++; // consume second '>' for >>
     }
+    str = skip_whitespace(str); // Handle optional whitespace after > or >>
     return parse_name(str);
 }
 
@@ -153,4 +155,221 @@ int parse_command(const char *input) {
     // Check if we consumed all input
     str = skip_whitespace(str);
     return (*str == '\0') ? 0 : -1;
+}
+
+// Helper function to extract a name token and advance pointer
+static char *extract_name_token(const char **str) {
+    *str = skip_whitespace(*str);
+    const char *start = *str;
+    
+    if (!is_name_char(**str)) return NULL;
+    
+    while (is_name_char(**str)) {
+        (*str)++;
+    }
+    
+    int len = *str - start;
+    char *name = malloc(len + 1);
+    if (name) {
+        strncpy(name, start, len);
+        name[len] = '\0';
+    }
+    return name;
+}
+
+// Parse command with redirection information
+int parse_command_with_redirection(const char *input, parsed_command_t *cmd) {
+    if (!input || !cmd) return -1;
+    
+    // Initialize the command structure
+    memset(cmd, 0, sizeof(parsed_command_t));
+    
+    const char *str = input;
+    str = skip_whitespace(str);
+    
+    // First token must be the command name
+    cmd->command = extract_name_token(&str);
+    if (!cmd->command) return -1;
+    
+    // Count maximum possible arguments first
+    const char *temp = str;
+    int max_args = 0;
+    
+    while (1) {
+        temp = skip_whitespace(temp);
+        if (*temp == '\0' || *temp == '|' || *temp == '&' || *temp == ';') break;
+        
+        if (*temp == '<') {
+            temp++;
+            temp = skip_whitespace(temp);
+            char *dummy = extract_name_token(&temp);
+            if (dummy) free(dummy);
+            else return -1;
+        } else if (*temp == '>') {
+            temp++;
+            if (*temp == '>') temp++;
+            temp = skip_whitespace(temp);
+            char *dummy = extract_name_token(&temp);
+            if (dummy) free(dummy);
+            else return -1;
+        } else {
+            char *arg = extract_name_token(&temp);
+            if (arg) {
+                max_args++;
+                free(arg);
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // Allocate argument array
+    if (max_args > 0) {
+        cmd->args = malloc(max_args * sizeof(char*));
+        if (!cmd->args) {
+            free(cmd->command);
+            return -1;
+        }
+    }
+    
+    // Parse arguments and redirections
+    while (1) {
+        str = skip_whitespace(str);
+        if (*str == '\0' || *str == '|' || *str == '&' || *str == ';') break;
+        
+        if (*str == '<') {
+            str++;
+            str = skip_whitespace(str); // Handle space after <
+            char *filename = extract_name_token(&str);
+            if (!filename) {
+                cleanup_parsed_command(cmd);
+                return -1;
+            }
+            // If multiple input redirections, use only the last one
+            free(cmd->input_file);
+            cmd->input_file = filename;
+        } else if (*str == '>') {
+            str++;
+            int append = 0;
+            if (*str == '>') {
+                str++;
+                append = 1;
+            }
+            str = skip_whitespace(str); // Handle space after > or >>
+            char *filename = extract_name_token(&str);
+            if (!filename) {
+                cleanup_parsed_command(cmd);
+                return -1;
+            }
+            // If multiple output redirections, use only the last one
+            free(cmd->output_file);
+            cmd->output_file = filename;
+            cmd->append_mode = append;
+        } else {
+            char *arg = extract_name_token(&str);
+            if (arg) {
+                cmd->args[cmd->arg_count++] = arg;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    return 0;
+}
+
+// Parse pipeline from input
+int parse_pipeline(const char *input, command_pipeline_t *pipeline) {
+    if (!input || !pipeline) return -1;
+    
+    memset(pipeline, 0, sizeof(command_pipeline_t));
+    
+    // Count pipes to determine number of commands
+    const char *temp = input;
+    int pipe_count = 0;
+    
+    while (*temp) {
+        if (*temp == '|' && *(temp + 1) != '|') {
+            pipe_count++;
+        }
+        temp++;
+    }
+    
+    int cmd_count = pipe_count + 1;
+    
+    // Allocate command array
+    pipeline->commands = malloc(cmd_count * sizeof(parsed_command_t));
+    if (!pipeline->commands) return -1;
+    
+    pipeline->cmd_count = cmd_count;
+    
+    // Parse each command in the pipeline
+    const char *str = input;
+    const char *cmd_start = str;
+    int cmd_index = 0;
+    
+    while (*str && cmd_index < cmd_count) {
+        // Find the end of current command (next pipe or end of string)
+        const char *cmd_end = str;
+        while (*cmd_end && !(*cmd_end == '|' && *(cmd_end + 1) != '|')) {
+            cmd_end++;
+        }
+        
+        // Extract the current command string
+        int cmd_len = cmd_end - cmd_start;
+        char *cmd_str = malloc(cmd_len + 1);
+        if (!cmd_str) {
+            cleanup_pipeline(pipeline);
+            return -1;
+        }
+        strncpy(cmd_str, cmd_start, cmd_len);
+        cmd_str[cmd_len] = '\0';
+        
+        // Parse this command
+        if (parse_command_with_redirection(cmd_str, &pipeline->commands[cmd_index]) != 0) {
+            free(cmd_str);
+            cleanup_pipeline(pipeline);
+            return -1;
+        }
+        
+        free(cmd_str);
+        cmd_index++;
+        
+        // Move to next command
+        if (*cmd_end == '|') {
+            str = cmd_end + 1;
+            cmd_start = str;
+        } else {
+            break;
+        }
+    }
+    
+    return 0;
+}
+
+// Cleanup function for parsed command
+void cleanup_parsed_command(parsed_command_t *cmd) {
+    if (!cmd) return;
+    
+    free(cmd->command);
+    for (int i = 0; i < cmd->arg_count; i++) {
+        free(cmd->args[i]);
+    }
+    free(cmd->args);
+    free(cmd->input_file);
+    free(cmd->output_file);
+    
+    memset(cmd, 0, sizeof(parsed_command_t));
+}
+
+// Cleanup function for pipeline
+void cleanup_pipeline(command_pipeline_t *pipeline) {
+    if (!pipeline) return;
+    
+    for (int i = 0; i < pipeline->cmd_count; i++) {
+        cleanup_parsed_command(&pipeline->commands[i]);
+    }
+    free(pipeline->commands);
+    
+    memset(pipeline, 0, sizeof(command_pipeline_t));
 }

@@ -7,6 +7,10 @@
 #include "shell.h"
 #include "commands.h"
 
+
+
+
+
 // Helper function to trim whitespace
 static char *trim_whitespace(char *str)
 {
@@ -29,7 +33,7 @@ static char *trim_whitespace(char *str)
 }
 
 // Execute hop command
-static int execute_hop(char *args)
+ int execute_hop(char *args)
 {
     char current_dir[PATH_MAX];
     if (!getcwd(current_dir, sizeof(current_dir)))
@@ -521,3 +525,11 @@ int execute_log(char *args) {
 
 
 
+
+
+// Add this function to src/commands.c after the existing execute_hop function
+
+// Direct hop execution for redirection
+int execute_hop_direct(char *args) {
+    return execute_hop(args);
+}
