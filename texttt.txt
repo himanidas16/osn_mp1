@@ -1,0 +1,5 @@
+
+
+cd MP1
+make all
+./shell.out
