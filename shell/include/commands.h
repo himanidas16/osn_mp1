@@ -11,4 +11,10 @@ int execute_log(char *args);
 // Direct execution functions for redirection
 int execute_hop_direct(char *args);
 
+// Activities command
+int execute_activities(void);
+
+// Ping command
+int execute_ping(char *args);
+
 #endif

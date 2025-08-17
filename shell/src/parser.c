@@ -3,7 +3,8 @@
 #include <string.h>
 #include "shell.h"
 #include "parser.h"
-
+#include <sys/wait.h>
+#include <signal.h>
 // Skip whitespace characters
 static const char *skip_whitespace(const char *str) {
     while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
@@ -112,37 +113,73 @@ static const char *parse_cmd_group(const char *str) {
     return str;
 }
 
-// Parse shell_cmd: cmd_group ((& | &&) cmd_group)* &?
+// Replace your parse_command function in src/parser.c with this:
+
+// Parse shell_cmd: cmd_group ((; | & | &&) cmd_group)* &?
+// Update parse_command to handle leading semicolons properly
+
 int parse_command(const char *input) {
     if (!input) return -1;
     
     const char *str = input;
+    str = skip_whitespace(str);
+    
+    // Handle empty input
+    if (*str == '\0') return -1;
+    
+    // Check for leading semicolon (invalid according to grammar)
+    if (*str == ';') {
+        return -1; // Invalid: cannot start with semicolon
+    }
     
     // Must start with cmd_group
     str = parse_cmd_group(str);
     if (!str) return -1;
     
-    // Then any number of ((& | &&) cmd_group)
+    // Then any number of ((; | & | &&) cmd_group)
     while (1) {
         const char *next;
         str = skip_whitespace(str);
         
-        if (*str == '&') {
+        if (*str == ';') {
+            // Semicolon - sequential execution
+            str++; // consume ';'
+            str = skip_whitespace(str);
+            
+            // Allow trailing semicolon (command; at end is valid)
+            if (*str == '\0') {
+                return 0; // Valid: command ending with semicolon
+            }
+            
+            // Handle consecutive semicolons (treat as empty commands)
+            if (*str == ';') {
+                continue; // Skip empty commands
+            }
+            
+            next = parse_cmd_group(str);
+            if (!next) return -1;
+            str = next;
+        } else if (*str == '&') {
             if (*(str + 1) == '&') {
                 // &&
                 str += 2;
+                str = skip_whitespace(str);
+                if (*str == '\0') {
+                    return -1; // Invalid: && at end without following command
+                }
                 next = parse_cmd_group(str);
-                if (!next) return -1; // && must be followed by cmd_group
+                if (!next) return -1;
                 str = next;
             } else {
                 // Single &
                 str++;
                 str = skip_whitespace(str);
                 if (*str == '\0') {
-                    // & at end is valid
-                    return 0;
+                    return 0; // Valid: & at end (background)
                 }
-                // & followed by more content, try to parse as cmd_group
+                if (*str == ';') {
+                    continue; // Handle & followed by ;
+                }
                 next = parse_cmd_group(str);
                 if (!next) return -1;
                 str = next;
@@ -279,13 +316,38 @@ int parse_command_with_redirection(const char *input, parsed_command_t *cmd) {
 }
 
 // Parse pipeline from input
+// Replace your parse_pipeline function in src/parser.c
+
 int parse_pipeline(const char *input, command_pipeline_t *pipeline) {
     if (!input || !pipeline) return -1;
     
     memset(pipeline, 0, sizeof(command_pipeline_t));
     
+    // Check if command ends with & (background execution)
+    const char *temp = input + strlen(input) - 1;
+    while (temp >= input && (*temp == ' ' || *temp == '\t' || *temp == '\n' || *temp == '\r')) {
+        temp--;
+    }
+    
+    if (temp >= input && *temp == '&') {
+        pipeline->is_background = 1;
+        
+        // Create a copy of input without the trailing &
+        int len = temp - input;
+        char *input_copy = malloc(len + 1);
+        if (!input_copy) return -1;
+        strncpy(input_copy, input, len);
+        input_copy[len] = '\0';
+        
+        // Parse the command without the &
+        int result = parse_pipeline(input_copy, pipeline);
+        pipeline->is_background = 1; // Ensure this is set
+        free(input_copy);
+        return result;
+    }
+    
     // Count pipes to determine number of commands
-    const char *temp = input;
+    temp = input;
     int pipe_count = 0;
     
     while (*temp) {
@@ -346,7 +408,6 @@ int parse_pipeline(const char *input, command_pipeline_t *pipeline) {
     
     return 0;
 }
-
 // Cleanup function for parsed command
 void cleanup_parsed_command(parsed_command_t *cmd) {
     if (!cmd) return;
@@ -373,3 +434,124 @@ void cleanup_pipeline(command_pipeline_t *pipeline) {
     
     memset(pipeline, 0, sizeof(command_pipeline_t));
 }
+
+
+
+//part d
+
+// Add these functions to the end of src/parser.c
+
+// Parse sequential commands separated by semicolons
+// Replace your parse_sequential_commands function in src/parser.c
+
+int parse_sequential_commands(const char *input, sequential_commands_t *seq_cmds) {
+    if (!input || !seq_cmds) return -1;
+    
+    memset(seq_cmds, 0, sizeof(sequential_commands_t));
+    
+    // Count semicolons to determine number of command groups
+    const char *temp = input;
+    int semicolon_count = 0;
+    
+    while (*temp) {
+        if (*temp == ';') {
+            semicolon_count++;
+        }
+        temp++;
+    }
+    
+    int max_pipeline_count = semicolon_count + 1;
+    
+    // Allocate pipeline array (may be larger than needed due to empty commands)
+    seq_cmds->pipelines = malloc(max_pipeline_count * sizeof(command_pipeline_t));
+    if (!seq_cmds->pipelines) return -1;
+    
+    // Parse each command group separated by semicolons
+    const char *str = input;
+    const char *cmd_start = str;
+    int pipeline_index = 0;
+    
+    while (*str) {
+        // Find the end of current command group (next semicolon or end of string)
+        const char *cmd_end = str;
+        while (*cmd_end && *cmd_end != ';') {
+            cmd_end++;
+        }
+        
+        // Extract the current command group string
+        int cmd_len = cmd_end - cmd_start;
+        char *cmd_str = malloc(cmd_len + 1);
+        if (!cmd_str) {
+            // Cleanup what we've allocated so far
+            seq_cmds->pipeline_count = pipeline_index;
+            cleanup_sequential_commands(seq_cmds);
+            return -1;
+        }
+        strncpy(cmd_str, cmd_start, cmd_len);
+        cmd_str[cmd_len] = '\0';
+        
+        // Trim whitespace from command string
+        char *trimmed_cmd = cmd_str;
+        while (*trimmed_cmd == ' ' || *trimmed_cmd == '\t' || *trimmed_cmd == '\n' || *trimmed_cmd == '\r') {
+            trimmed_cmd++;
+        }
+        char *end = trimmed_cmd + strlen(trimmed_cmd) - 1;
+        while (end > trimmed_cmd && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
+            *end = '\0';
+            end--;
+        }
+        
+        // Handle empty commands - just skip them
+        if (strlen(trimmed_cmd) == 0) {
+            free(cmd_str);
+            // Move to next command group
+            if (*cmd_end == ';') {
+                str = cmd_end + 1;
+                cmd_start = str;
+            } else {
+                break;
+            }
+            continue;
+        }
+        
+        // Parse this command group as a pipeline
+        if (parse_pipeline(trimmed_cmd, &seq_cmds->pipelines[pipeline_index]) != 0) {
+            free(cmd_str);
+            seq_cmds->pipeline_count = pipeline_index;
+            cleanup_sequential_commands(seq_cmds);
+            return -1;
+        }
+        
+        free(cmd_str);
+        pipeline_index++;
+        
+        // Move to next command group
+        if (*cmd_end == ';') {
+            str = cmd_end + 1;
+            cmd_start = str;
+        } else {
+            break;
+        }
+    }
+    
+    // Update the actual count
+    seq_cmds->pipeline_count = pipeline_index;
+    
+    return 0;
+}
+
+// Cleanup function for sequential commands
+void cleanup_sequential_commands(sequential_commands_t *seq_cmds) {
+    if (!seq_cmds) return;
+    
+    for (int i = 0; i < seq_cmds->pipeline_count; i++) {
+        cleanup_pipeline(&seq_cmds->pipelines[i]);
+    }
+    free(seq_cmds->pipelines);
+    
+    memset(seq_cmds, 0, sizeof(sequential_commands_t));
+}
+
+
+//part d2 background 
+

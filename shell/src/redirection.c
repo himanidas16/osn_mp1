@@ -10,6 +10,7 @@
 #include "../include/shell.h"
 #include "../include/commands.h"
 
+
 // Handle input redirection (Part C.1)
 int handle_input_redirection(const char *filename) {
     if (!filename) {
@@ -69,13 +70,23 @@ int handle_output_redirection(const char *filename, int append_mode) {
 }
 
 // Check if command is a built-in command
+// Update the is_builtin_command function in src/redirection.c
+
+// Update the is_builtin_command function in src/redirection.c
+
 static int is_builtin_command(const char *command) {
     return (strcmp(command, "hop") == 0 || 
             strcmp(command, "reveal") == 0 || 
-            strcmp(command, "log") == 0);
+            strcmp(command, "log") == 0 ||
+            strcmp(command, "activities") == 0 ||
+            strcmp(command, "ping") == 0);
 }
 
 // Execute built-in command with arguments
+// Update the execute_builtin function in src/redirection.c
+
+// Update the execute_builtin function in src/redirection.c
+
 static int execute_builtin(parsed_command_t *cmd) {
     if (strcmp(cmd->command, "hop") == 0) {
         // Build arguments string for hop
@@ -99,6 +110,17 @@ static int execute_builtin(parsed_command_t *cmd) {
             strcat(args_str, cmd->args[i]);
         }
         return execute_log(args_str[0] ? args_str : NULL);
+    } else if (strcmp(cmd->command, "activities") == 0) {
+        // Activities command doesn't take arguments
+        return execute_activities();
+    } else if (strcmp(cmd->command, "ping") == 0) {
+        // Build arguments string for ping
+        char args_str[1024] = {0};
+        for (int i = 0; i < cmd->arg_count; i++) {
+            if (i > 0) strcat(args_str, " ");
+            strcat(args_str, cmd->args[i]);
+        }
+        return execute_ping(args_str[0] ? args_str : NULL);
     }
     return -1;
 }
@@ -314,14 +336,22 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
 }
 
 // Execute pipeline of commands
+// Replace your execute_pipeline function in src/redirection.c
+
+// Replace your execute_pipeline function in src/redirection.c
+
 int execute_pipeline(command_pipeline_t *pipeline) {
     if (!pipeline || pipeline->cmd_count == 0) {
         return -1;
     }
     
-    // Single command - use existing redirection logic
+    // Single command case
     if (pipeline->cmd_count == 1) {
-        return execute_command_with_redirection(&pipeline->commands[0]);
+        if (pipeline->is_background) {
+            return execute_command_background(&pipeline->commands[0]);
+        } else {
+            return execute_command_with_redirection(&pipeline->commands[0]);
+        }
     }
     
     // Multiple commands - set up pipes
@@ -390,14 +420,32 @@ int execute_pipeline(command_pipeline_t *pipeline) {
         if (i > 0) close(pipes[i-1][0]); // Close any remaining read ends
     }
     
-    // Wait for all child processes to complete
     int final_status = 0;
-    for (int i = 0; i < pipeline->cmd_count; i++) {
-        if (pids[i] > 0) { // Only wait for external commands
-            int status;
-            waitpid(pids[i], &status, 0);
-            if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-                final_status = WEXITSTATUS(status);
+    
+    // Handle background vs foreground execution
+    if (pipeline->is_background) {
+        // For background pipelines, add the last process to job management
+        // and don't wait for any processes
+        if (pids[pipeline->cmd_count - 1] > 0) {
+            // Build command string for job tracking
+            char cmd_str[256] = {0};
+            strncpy(cmd_str, pipeline->commands[0].command, sizeof(cmd_str) - 1);
+            if (pipeline->cmd_count > 1) {
+                strncat(cmd_str, " | ...", sizeof(cmd_str) - strlen(cmd_str) - 1);
+            }
+            add_background_job(pids[pipeline->cmd_count - 1], cmd_str);
+        }
+        // For background processes, we don't wait, so status is 0
+        final_status = 0;
+    } else {
+        // Wait for all child processes to complete (foreground)
+        for (int i = 0; i < pipeline->cmd_count; i++) {
+            if (pids[i] > 0) { // Only wait for external commands
+                int status;
+                waitpid(pids[i], &status, 0);
+                if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                    final_status = WEXITSTATUS(status);
+                }
             }
         }
     }
@@ -410,4 +458,105 @@ int execute_pipeline(command_pipeline_t *pipeline) {
     free(pids);
     
     return final_status;
+}
+
+//part d 
+// Add this function to the end of src/redirection.c
+
+// Execute sequential commands (Part D.1)
+int execute_sequential_commands(sequential_commands_t *seq_cmds) {
+    if (!seq_cmds || seq_cmds->pipeline_count == 0) {
+        return -1;
+    }
+    
+    int overall_status = 0;
+    
+    // Execute each pipeline in sequence
+    for (int i = 0; i < seq_cmds->pipeline_count; i++) {
+        // Execute the current pipeline
+        int status = execute_pipeline(&seq_cmds->pipelines[i]);
+        
+        // Record if any command failed, but continue executing
+        if (status != 0) {
+            overall_status = status;
+        }
+        
+        // Wait for current pipeline to complete before starting next
+        // (This is handled by execute_pipeline, but we ensure it here)
+    }
+    
+    return overall_status;
+}
+
+
+// Add this function to src/redirection.c
+
+// Execute command in background
+int execute_command_background(parsed_command_t *cmd) {
+    if (!cmd || !cmd->command) {
+        return -1;
+    }
+    
+    // Built-in commands cannot run in background (they need the shell context)
+    if (is_builtin_command(cmd->command)) {
+        printf("Built-in command '%s' cannot run in background\n", cmd->command);
+        return -1;
+    }
+    
+    // Fork for background execution
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("fork failed");
+        return -1;
+    }
+    
+    if (pid == 0) {
+        // Child process
+        
+        // Background processes should not have access to terminal input
+        // Redirect stdin to /dev/null
+        int null_fd = open("/dev/null", O_RDONLY);
+        if (null_fd != -1) {
+            dup2(null_fd, STDIN_FILENO);
+            close(null_fd);
+        }
+        
+        // Handle file redirections
+        if (cmd->input_file) {
+            if (handle_input_redirection(cmd->input_file) == -1) {
+                exit(1);
+            }
+        }
+        
+        if (cmd->output_file) {
+            if (handle_output_redirection(cmd->output_file, cmd->append_mode) == -1) {
+                exit(1);
+            }
+        }
+        
+        // Prepare arguments for execvp
+        char **args = malloc((cmd->arg_count + 2) * sizeof(char*));
+        if (!args) {
+            perror("malloc failed");
+            exit(1);
+        }
+        
+        args[0] = cmd->command;
+        for (int i = 0; i < cmd->arg_count; i++) {
+            args[i + 1] = cmd->args[i];
+        }
+        args[cmd->arg_count + 1] = NULL;
+        
+        // Execute the command
+        execvp(cmd->command, args);
+        
+        // If execvp returns, there was an error
+        perror("execvp failed");
+        free(args);
+        exit(1);
+    } else {
+        // Parent process - add to background jobs and don't wait
+        add_background_job(pid, cmd->command);
+        return 0;
+    }
 }

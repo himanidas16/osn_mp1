@@ -9,6 +9,12 @@ int execute_command_with_redirection(parsed_command_t *cmd);
 // Function to execute pipeline of commands
 int execute_pipeline(command_pipeline_t *pipeline);
 
+// Function to execute sequential commands
+int execute_sequential_commands(sequential_commands_t *seq_cmds);
+
+// Function to execute command in background
+int execute_command_background(parsed_command_t *cmd);
+
 // Helper function to handle input redirection
 int handle_input_redirection(const char *filename);
 
