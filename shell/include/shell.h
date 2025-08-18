@@ -91,5 +91,14 @@ void setup_signal_handlers(void);
 void sigint_handler(int sig);
 void sigtstp_handler(int sig);
 void cleanup_and_exit(void);
+///part ctrol
+
+// Add these lines to the existing declarations in shell.h
+extern volatile sig_atomic_t sigint_received;
+extern volatile sig_atomic_t sigtstp_received;
+
+// Add this function declaration
+void handle_pending_signals(void);
+
 
 #endif

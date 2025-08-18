@@ -6,11 +6,13 @@
 #include <sys/stat.h>
 #include "shell.h"
 #include "commands.h"
+#include <signal.h> // Include this header for struct sigaction
 
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
-
+#include <fcntl.h>        // Add this line
+#include <sys/types.h>    // Add this line
 
 // Helper function to trim whitespace
 static char *trim_whitespace(char *str)
@@ -221,6 +223,27 @@ int execute_command(const char *input)
         free(input_copy);
         return result;
     }
+ // Check if it's a fg command
+ if (strncmp(cmd, "fg", 2) == 0 && (cmd[2] == ' ' || cmd[2] == '\t' || cmd[2] == '\0')) {
+    char *args = NULL;
+    if (cmd[2] != '\0') {
+        args = cmd + 2;
+    }
+    int result = execute_fg(args);
+    free(input_copy);
+    return result;
+}
+
+// Check if it's a bg command
+if (strncmp(cmd, "bg", 2) == 0 && (cmd[2] == ' ' || cmd[2] == '\t' || cmd[2] == '\0')) {
+    char *args = NULL;
+    if (cmd[2] != '\0') {
+        args = cmd + 2;
+    }
+    int result = execute_bg(args);
+    free(input_copy);
+    return result;
+}
 
     // For now, other commands do nothing (will implement later)
     free(input_copy);
@@ -573,6 +596,7 @@ void init_background_jobs(void) {
 }
 
 // Add a new background job
+// Add a new background job
 int add_background_job(pid_t pid, const char *command) {
     // Find an empty slot
     for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
@@ -586,15 +610,44 @@ int add_background_job(pid_t pid, const char *command) {
             strncpy(g_background_jobs[i].command, command, sizeof(g_background_jobs[i].command) - 1);
             g_background_jobs[i].command[sizeof(g_background_jobs[i].command) - 1] = '\0';
             
-            // Print job information immediately
-            printf("[%d] %d\n", g_background_jobs[i].job_id, pid);
-            fflush(stdout);
+            // DON'T print job information here anymore - let the caller handle it
             
             return g_background_jobs[i].job_id;
         }
     }
     return -1; // No available slots
 }
+
+
+// Add these RIGHT AFTER your existing add_background_job function in src/commands.c
+
+// For background jobs (sleep 30 &)
+int add_background_job_running(pid_t pid, const char *command) {
+    int job_id = add_background_job(pid, command);
+    if (job_id > 0) {
+        printf("[%d] %d\n", job_id, pid);
+        fflush(stdout);
+    }
+    return job_id;
+}
+
+// For stopped jobs (Ctrl-Z) 
+int add_background_job_stopped(pid_t pid, const char *command) {
+    int job_id = add_background_job(pid, command);
+    if (job_id > 0) {
+        // Update state to stopped
+        for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+            if (g_background_jobs[i].is_active && g_background_jobs[i].pid == pid) {
+                g_background_jobs[i].state = PROCESS_STOPPED;
+                break;
+            }
+        }
+        printf("[%d] Stopped %s\n", job_id, command);
+        fflush(stdout);
+    }
+    return job_id;
+}
+
 
 // Check for completed background jobs (non-blocking)
 void check_background_jobs(void) {
@@ -793,80 +846,105 @@ int execute_ping(char *args) {
 
   // Add these functions to the END of src/commands.c
 
+// Add these signal handling functions to the END of src/commands.c
+// Replace the existing signal handling functions with these:
+
 // Setup signal handlers
-void setup_signal_handlers(void) {
-    struct sigaction sa_int, sa_tstp;
+// Alternative signal handling using signal() instead of sigaction()
+
+// Setup signal handlers
+// Add these to commands.c - COMPLETE REPLACEMENT
+
+// Add these to commands.c - COMPLETE REPLACEMENT
+
+// Global flags to indicate if we received signals
+volatile sig_atomic_t sigint_received = 0;
+volatile sig_atomic_t sigtstp_received = 0;
+
+// SIGINT handler (Ctrl-C) - MINIMAL VERSION
+// SIGINT handler (Ctrl-C) - MINIMAL VERSION
+void sigint_handler(int sig) {
+    (void)sig;
     
+    // Only send signal to foreground process group if one exists
+    if (g_foreground_pgid > 0) {
+        killpg(g_foreground_pgid, SIGINT);
+    }
+    
+    // Set flag for main loop
+    sigint_received = 1;
+}
+
+// SIGTSTP handler (Ctrl-Z) - MINIMAL VERSION  
+void sigtstp_handler(int sig) {
+    (void)sig;
+    
+    // Only send signal to foreground process group if one exists
+    if (g_foreground_pgid > 0) {
+        killpg(g_foreground_pgid, SIGTSTP);
+    }
+    
+    // Set flag for main loop  
+    sigtstp_received = 1;
+}
+
+// Setup signal handlers using simple signal() function
+void setup_signal_handlers(void) {
     // Setup SIGINT handler (Ctrl-C)
-    sa_int.sa_handler = sigint_handler;
-    sigemptyset(&sa_int.sa_mask);
-    sa_int.sa_flags = SA_RESTART;
-    if (sigaction(SIGINT, &sa_int, NULL) == -1) {
-        perror("sigaction SIGINT");
+    if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+        perror("signal SIGINT");
     }
     
     // Setup SIGTSTP handler (Ctrl-Z)
-    sa_tstp.sa_handler = sigtstp_handler;
-    sigemptyset(&sa_tstp.sa_mask);
-    sa_tstp.sa_flags = SA_RESTART;
-    if (sigaction(SIGTSTP, &sa_tstp, NULL) == -1) {
-        perror("sigaction SIGTSTP");
+    if (signal(SIGTSTP, sigtstp_handler) == SIG_ERR) {
+        perror("signal SIGTSTP");
     }
     
     // Ignore SIGTTOU to avoid being stopped when writing to terminal
     signal(SIGTTOU, SIG_IGN);
 }
 
-// SIGINT handler (Ctrl-C)
-void sigint_handler(int sig) {
-    (void)sig; // Unused parameter
+// Function to handle signals after main loop iteration
+// void handle_pending_signals(void) {
+//     if (sigint_received) {
+//         sigint_received = 0;
+//         write(STDOUT_FILENO, "\n", 1);
+        
+//         // Clear foreground process info
+//         g_foreground_pid = 0;
+//         g_foreground_pgid = 0;
+//         g_foreground_command[0] = '\0';
+//     }
     
-    if (g_foreground_pgid > 0) {
-        // Send SIGINT to the foreground process group
-        if (killpg(g_foreground_pgid, SIGINT) == 0) {
-            // Successfully sent signal to process group
-            printf("\n"); // Move to next line after ^C
-            fflush(stdout);
-        }
-    } else {
-        // No foreground process, just print newline
-        printf("\n");
-        fflush(stdout);
-    }
-}
-
-// SIGTSTP handler (Ctrl-Z)
-void sigtstp_handler(int sig) {
-    (void)sig; // Unused parameter
-    
-    if (g_foreground_pgid > 0 && g_foreground_pid > 0) {
-        // Send SIGTSTP to the foreground process group
-        if (killpg(g_foreground_pgid, SIGTSTP) == 0) {
-            // Add the stopped process to background jobs
-            int job_id = add_background_job(g_foreground_pid, g_foreground_command);
-            if (job_id > 0) {
-                // Update the job state to stopped
-                for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
-                    if (g_background_jobs[i].is_active && g_background_jobs[i].pid == g_foreground_pid) {
-                        g_background_jobs[i].state = PROCESS_STOPPED;
-                        printf("\n[%d] Stopped %s\n", job_id, g_foreground_command);
-                        fflush(stdout);
-                        break;
-                    }
-                }
-            }
-            
-            // Clear foreground process info
-            g_foreground_pid = 0;
-            g_foreground_pgid = 0;
-            g_foreground_command[0] = '\0';
-        }
-    } else {
-        // No foreground process, just print newline
-        printf("\n");
-        fflush(stdout);
-    }
-}
+//     if (sigtstp_received) {
+//         sigtstp_received = 0;
+//         write(STDOUT_FILENO, "\n", 1);
+        
+//         if (g_foreground_pid > 0) {
+//             // Add the stopped process to background jobs
+//             int job_id = add_background_job(g_foreground_pid, g_foreground_command);
+//             if (job_id > 0) {
+//                 // Update the job state to stopped
+//                 for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+//                     if (g_background_jobs[i].is_active && g_background_jobs[i].pid == g_foreground_pid) {
+//                         g_background_jobs[i].state = PROCESS_STOPPED;
+                        
+//                         // Print stopped message
+//                         char msg[256];
+//                         int len = snprintf(msg, sizeof(msg), "[%d] Stopped %s\n", job_id, g_foreground_command);
+//                         write(STDOUT_FILENO, msg, len);
+//                         break;
+//                     }
+//                 }
+//             }
+//         }
+        
+//         // Clear foreground process info
+//         g_foreground_pid = 0;
+//         g_foreground_pgid = 0;
+//         g_foreground_command[0] = '\0';
+//     }
+// }
 
 // Cleanup and exit function (for Ctrl-D)
 void cleanup_and_exit(void) {
@@ -880,4 +958,262 @@ void cleanup_and_exit(void) {
     }
     
     exit(0);
+}
+
+
+
+//part e3
+// Add these functions to the end of src/commands.c
+
+// Helper function to find job by job ID
+background_job_t* find_job_by_id(int job_id) {
+    for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+        if (g_background_jobs[i].is_active && g_background_jobs[i].job_id == job_id) {
+            return &g_background_jobs[i];
+        }
+    }
+    return NULL;
+}
+
+// Helper function to find most recent job (highest job_id)
+background_job_t* find_most_recent_job(void) {
+    background_job_t* most_recent = NULL;
+    int highest_job_id = 0;
+    
+    for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+        if (g_background_jobs[i].is_active && g_background_jobs[i].job_id > highest_job_id) {
+            highest_job_id = g_background_jobs[i].job_id;
+            most_recent = &g_background_jobs[i];
+        }
+    }
+    return most_recent;
+}
+
+// Execute fg command
+// Replace your execute_fg function with this improved version
+
+// Replace your execute_fg function with this improved version
+
+int execute_fg(char *args) {
+    background_job_t* job = NULL;
+    
+    if (!args || strlen(trim_whitespace(args)) == 0) {
+        // No job number provided, use most recent job
+        job = find_most_recent_job();
+        if (!job) {
+            printf("No jobs in background\n");
+            return -1;
+        }
+    } else {
+        // Parse job number
+        char *args_copy = malloc(strlen(args) + 1);
+        if (!args_copy) {
+            perror("fg: malloc failed");
+            return -1;
+        }
+        strcpy(args_copy, args);
+        
+        char *token = strtok(args_copy, " \t");
+        if (!token) {
+            printf("fg: invalid job number\n");
+            free(args_copy);
+            return -1;
+        }
+        
+        char *endptr;
+        long job_id_long = strtol(token, &endptr, 10);
+        if (*endptr != '\0' || job_id_long <= 0) {
+            printf("fg: invalid job number '%s'\n", token);
+            free(args_copy);
+            return -1;
+        }
+        
+        int job_id = (int)job_id_long;
+        job = find_job_by_id(job_id);
+        if (!job) {
+            printf("No such job\n");
+            free(args_copy);
+            return -1;
+        }
+        
+        free(args_copy);
+    }
+    
+    // Check if the process still exists
+    if (kill(job->pid, 0) == -1) {
+        if (errno == ESRCH) {
+            printf("No such job\n");
+            job->is_active = 0;
+            return -1;
+        }
+    }
+    
+    // Print the command being brought to foreground
+    printf("%s\n", job->command);
+    fflush(stdout);
+    
+    // Save job info before removing from background list
+    pid_t job_pid = job->pid;
+    char job_command[256];
+    strncpy(job_command, job->command, sizeof(job_command) - 1);
+    job_command[sizeof(job_command) - 1] = '\0';
+    process_state_t job_state = job->state;
+    // int original_job_id = job->job_id;  // SAVE ORIGINAL JOB ID
+    
+    // Remove job from background jobs list BEFORE setting as foreground
+    job->is_active = 0;
+    
+    // Set this job as the foreground job
+    g_foreground_pid = job_pid;
+    g_foreground_pgid = job_pid;
+    strncpy(g_foreground_command, job_command, sizeof(g_foreground_command) - 1);
+    g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
+    
+    // If job is stopped, send SIGCONT to resume it
+    if (job_state == PROCESS_STOPPED) {
+        if (kill(job_pid, SIGCONT) == -1) {
+            if (errno == ESRCH) {
+                printf("No such job\n");
+                g_foreground_pid = 0;
+                g_foreground_pgid = 0;
+                g_foreground_command[0] = '\0';
+                return -1;
+            }
+            perror("fg: failed to send SIGCONT");
+            g_foreground_pid = 0;
+            g_foreground_pgid = 0;
+            g_foreground_command[0] = '\0';
+            return -1;
+        }
+    }
+    
+    // Wait for the job to complete or stop again
+    int status;
+    pid_t result;
+    
+    while (1) {
+        result = waitpid(job_pid, &status, WUNTRACED);
+        
+        if (result == -1) {
+            if (errno == EINTR) {
+                continue;
+            } else if (errno == ECHILD) {
+                break;
+            } else {
+                perror("fg: waitpid failed");
+                g_foreground_pid = 0;
+                g_foreground_pgid = 0;
+                g_foreground_command[0] = '\0';
+                return -1;
+            }
+        } else if (result == job_pid) {
+            break;
+        } else {
+            continue;
+        }
+    }
+    
+    if (WIFSTOPPED(status)) {
+        // Process was stopped again (Ctrl-Z), put it back in background
+        // Create new job with new ID (don't reuse original_job_id)
+        int new_job_id = add_background_job(job_pid, job_command);
+        if (new_job_id > 0) {
+            // Update the job state to stopped
+            for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+                if (g_background_jobs[i].is_active && g_background_jobs[i].pid == job_pid) {
+                    g_background_jobs[i].state = PROCESS_STOPPED;
+                    break;
+                }
+            }
+            printf("[%d] Stopped %s\n", new_job_id, job_command);
+            fflush(stdout);
+        }
+    }
+    
+    // Clear foreground process info
+    g_foreground_pid = 0;
+    g_foreground_pgid = 0;
+    g_foreground_command[0] = '\0';
+    
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 0;
+}
+
+// Execute bg command
+int execute_bg(char *args) {
+    background_job_t* job = NULL;
+    
+    if (!args || strlen(trim_whitespace(args)) == 0) {
+        // No job number provided, use most recent job
+        job = find_most_recent_job();
+        if (!job) {
+            printf("No jobs in background\n");
+            return -1;
+        }
+    } else {
+        // Parse job number
+        char *args_copy = malloc(strlen(args) + 1);
+        if (!args_copy) {
+            perror("bg: malloc failed");
+            return -1;
+        }
+        strcpy(args_copy, args);
+        
+        char *token = strtok(args_copy, " \t");
+        if (!token) {
+            printf("bg: invalid job number\n");
+            free(args_copy);
+            return -1;
+        }
+        
+        char *endptr;
+        long job_id_long = strtol(token, &endptr, 10);
+        if (*endptr != '\0' || job_id_long <= 0) {
+            printf("bg: invalid job number '%s'\n", token);
+            free(args_copy);
+            return -1;
+        }
+        
+        int job_id = (int)job_id_long;
+        job = find_job_by_id(job_id);
+        if (!job) {
+            printf("No such job\n");
+            free(args_copy);
+            return -1;
+        }
+        
+        free(args_copy);
+    }
+    
+    // Check if job is already running
+    if (job->state == PROCESS_RUNNING) {
+        printf("Job already running\n");
+        return 0;
+    }
+    
+    // Only stopped jobs can be resumed with bg
+    if (job->state != PROCESS_STOPPED) {
+        printf("Job is not stopped\n");
+        return -1;
+    }
+    
+    // Send SIGCONT to resume the job
+    if (kill(job->pid, SIGCONT) == -1) {
+        if (errno == ESRCH) {
+            // Process no longer exists, remove from job list
+            job->is_active = 0;
+            printf("No such job\n");
+        } else {
+            perror("bg: failed to send SIGCONT");
+        }
+        return -1;
+    }
+    
+    // Update job state to running
+    job->state = PROCESS_RUNNING;
+    
+    // Print resume message
+    printf("[%d] %s &\n", job->job_id, job->command);
+    fflush(stdout);
+    
+    return 0;
 }

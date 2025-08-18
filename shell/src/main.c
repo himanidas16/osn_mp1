@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <errno.h>
+#include <signal.h>
 #include "shell.h"
 #include "prompt.h"
 #include "parser.h"
@@ -17,14 +18,45 @@ char g_shell_prev[PATH_MAX] = {0}; // Previous directory for hop -
 background_job_t g_background_jobs[MAX_BACKGROUND_JOBS];
 int g_next_job_id = 1;
 
-
 // Log storage
 char g_log_commands[MAX_LOG_COMMANDS][1024];
 int g_log_count = 0;
 int g_log_start = 0;
 
-// Replace your main function in src/main.c
+// Signal handling globals
+pid_t g_foreground_pid = 0;
+pid_t g_foreground_pgid = 0;
+char g_foreground_command[256] = {0};
 
+// Signal handler flags
+static volatile sig_atomic_t interrupted = 0;
+static volatile sig_atomic_t suspended = 0;
+
+// Replace the signal handler functions in main.c with these:
+
+void sigint_handler_simple(int sig) {
+    (void)sig;
+    
+    // Send SIGINT to foreground process group if it exists
+    if (g_foreground_pgid > 0) {
+        killpg(g_foreground_pgid, SIGINT);
+    }
+    
+    // Set flag for main loop
+    interrupted = 1;
+}
+
+void sigtstp_handler_simple(int sig) {
+    (void)sig;
+    
+    // Send SIGTSTP to foreground process group if it exists
+    if (g_foreground_pgid > 0) {
+        killpg(g_foreground_pgid, SIGTSTP);
+    }
+    
+    // Set flag for main loop  
+    suspended = 1;
+}
 int main(void) {
     if (prompt_init() != 0) {
         fprintf(stderr, "Failed to initialize prompt\n");
@@ -36,27 +68,78 @@ int main(void) {
     
     // Initialize background job management
     init_background_jobs();
+    
+    // Set up signal handlers
+    signal(SIGINT, sigint_handler_simple);   // Ctrl-C
+    signal(SIGTSTP, sigtstp_handler_simple); // Ctrl-Z
 
     for (;;) {
+        // Reset interrupt flags
+        interrupted = 0;
+        suspended = 0;
+        
         // Check for completed background jobs BEFORE showing prompt
         check_background_jobs();
         
         char p[SHELL_PROMPT_MAX];
         if (prompt_build(p, sizeof p) == 0) {
-            write(STDOUT_FILENO, p, strlen(p));
+            printf("%s", p);
+            fflush(stdout);
         }
 
         char *line = NULL; 
         size_t cap = 0;
+        
         ssize_t n = getline(&line, &cap, stdin);
+        
+        // Check if we were interrupted by Ctrl-C
+        if (interrupted) {
+            printf("\n");
+            // Clear foreground process info
+            g_foreground_pid = 0;
+            g_foreground_pgid = 0;
+            g_foreground_command[0] = '\0';
+            if (line) free(line);
+            continue;
+        }
+        
+        // Check if we were suspended by Ctrl-Z  
+        if (suspended) {
+            printf("\n");
+            
+            // If there was a foreground process, it should have been stopped
+            // The waitpid() in execute_command_with_redirection will handle adding it to background jobs
+            
+            if (line) free(line);
+            continue;
+        }
+        
         if (n < 0) {
-            if (errno == EINTR) {
-                free(line);
-                continue; // Retry if interrupted by a signal
+            if (feof(stdin)) {
+                // EOF (Ctrl-D) detected
+                printf("\nlogout\n");
+                // Send SIGKILL to all active background processes
+                for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+                    if (g_background_jobs[i].is_active && g_background_jobs[i].pid > 0) {
+                        kill(g_background_jobs[i].pid, SIGKILL);
+                    }
+                }
+                if (line) free(line);
+                exit(0);
+            } else if (errno == EINTR) {
+                // Signal interrupted getline
+                printf("\n");
+                if (line) free(line);
+                
+                // Clear the interrupted state of stdin
+                clearerr(stdin);
+                errno = 0;
+                continue; 
+            } else {
+                perror("getline");
+                if (line) free(line);
+                break;
             }
-            write(STDOUT_FILENO, "\n", 1);
-            free(line);
-            break;
         }
 
         // Remove trailing newline if present
@@ -68,10 +151,10 @@ int main(void) {
         // Check for completed background jobs AFTER user input
         check_background_jobs();
 
-        // A.3: Parse and execute the command
+        // Parse and execute the command
         if (strlen(line) > 0) {  // Only parse non-empty input
             if (parse_command(line) != 0) {
-                write(STDOUT_FILENO, "Invalid Syntax!\n", 16);
+                printf("Invalid Syntax!\n");
             } else {
                 // Add to log if it's not a log command and not identical to previous
                 if (!log_contains_log_command(line)) {
@@ -137,7 +220,6 @@ int main(void) {
         }
                   
         free(line);
-        // Loop continues, which will display prompt again
     }
     return 0;
 }
