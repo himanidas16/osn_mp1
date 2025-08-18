@@ -29,34 +29,34 @@ pid_t g_foreground_pgid = 0;
 char g_foreground_command[256] = {0};
 
 // Signal handler flags
-static volatile sig_atomic_t interrupted = 0;
-static volatile sig_atomic_t suspended = 0;
+// static volatile sig_atomic_t interrupted = 0;
+// static volatile sig_atomic_t suspended = 0;
 
 // Replace the signal handler functions in main.c with these:
 
-void sigint_handler_simple(int sig) {
-    (void)sig;
+// void sigint_handler_simple(int sig) {
+//     (void)sig;
     
-    // Send SIGINT to foreground process group if it exists
-    if (g_foreground_pgid > 0) {
-        killpg(g_foreground_pgid, SIGINT);
-    }
+//     // Send SIGINT to foreground process group if it exists
+//     if (g_foreground_pgid > 0) {
+//         killpg(g_foreground_pgid, SIGINT);
+//     }
     
-    // Set flag for main loop
-    interrupted = 1;
-}
+//     // Set flag for main loop
+//     interrupted = 1;
+// }
 
-void sigtstp_handler_simple(int sig) {
-    (void)sig;
+// void sigtstp_handler_simple(int sig) {
+//     (void)sig;
     
-    // Send SIGTSTP to foreground process group if it exists
-    if (g_foreground_pgid > 0) {
-        killpg(g_foreground_pgid, SIGTSTP);
-    }
+//     // Send SIGTSTP to foreground process group if it exists
+//     if (g_foreground_pgid > 0) {
+//         killpg(g_foreground_pgid, SIGTSTP);
+//     }
     
-    // Set flag for main loop  
-    suspended = 1;
-}
+//     // Set flag for main loop  
+//     suspended = 1;
+// }
 int main(void) {
     if (prompt_init() != 0) {
         fprintf(stderr, "Failed to initialize prompt\n");
@@ -68,15 +68,18 @@ int main(void) {
     
     // Initialize background job management
     init_background_jobs();
-    
+    g_next_job_id = 1; 
     // Set up signal handlers
-    signal(SIGINT, sigint_handler_simple);   // Ctrl-C
-    signal(SIGTSTP, sigtstp_handler_simple); // Ctrl-Z
+    // signal(SIGINT, sigint_handler_simple);   // Ctrl-C
+    // signal(SIGTSTP, sigtstp_handler_simple); // Ctrl-Z
+
+    // Set up signal handlers from commands.c
+setup_signal_handlers();
 
     for (;;) {
         // Reset interrupt flags
-        interrupted = 0;
-        suspended = 0;
+        // interrupted = 0;
+        // suspended = 0;
         
         // Check for completed background jobs BEFORE showing prompt
         check_background_jobs();
@@ -93,27 +96,30 @@ int main(void) {
         ssize_t n = getline(&line, &cap, stdin);
         
         // Check if we were interrupted by Ctrl-C
-        if (interrupted) {
-            printf("\n");
-            // Clear foreground process info
-            g_foreground_pid = 0;
-            g_foreground_pgid = 0;
-            g_foreground_command[0] = '\0';
-            if (line) free(line);
-            continue;
-        }
+        // if (interrupted) {
+        //     printf("\n");
+        //     // Clear foreground process info
+        //     g_foreground_pid = 0;
+        //     g_foreground_pgid = 0;
+        //     g_foreground_command[0] = '\0';
+        //     if (line) free(line);
+        //     continue;
+        // }
         
-        // Check if we were suspended by Ctrl-Z  
-        if (suspended) {
-            printf("\n");
+        // // Check if we were suspended by Ctrl-Z  
+        // if (suspended) {
+        //     printf("\n");
             
-            // If there was a foreground process, it should have been stopped
-            // The waitpid() in execute_command_with_redirection will handle adding it to background jobs
+        //     // If there was a foreground process, it should have been stopped
+        //     // The waitpid() in execute_command_with_redirection will handle adding it to background jobs
             
-            if (line) free(line);
-            continue;
-        }
-        
+        //     if (line) free(line);
+        //     continue;
+        // }
+
+        // Handle any pending signals
+
+// printf("DEBUG: After handle_pending_signals, fg_pid=%d\n", g_foreground_pid);       
         if (n < 0) {
             if (feof(stdin)) {
                 // EOF (Ctrl-D) detected
@@ -218,7 +224,7 @@ int main(void) {
                 }
             }
         }
-                  
+        // handle_pending_signals();    
         free(line);
     }
     return 0;

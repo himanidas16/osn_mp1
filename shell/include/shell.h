@@ -98,7 +98,10 @@ extern volatile sig_atomic_t sigint_received;
 extern volatile sig_atomic_t sigtstp_received;
 
 // Add this function declaration
-void handle_pending_signals(void);
+// void handle_pending_signals(void);
+
+int add_background_job_running(pid_t pid, const char *command);
+int add_background_job_stopped(pid_t pid, const char *command);
 
 
 #endif

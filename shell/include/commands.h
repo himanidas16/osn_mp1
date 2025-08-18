@@ -17,7 +17,7 @@ int execute_activities(void);
 // Ping command
 int execute_ping(char *args);
 // Add this line to commands.h
-void handle_pending_signals(void);
+// void handle_pending_signals(void);
 
 
 // fg and bg command functions

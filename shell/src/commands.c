@@ -858,11 +858,42 @@ int execute_ping(char *args) {
 // Add these to commands.c - COMPLETE REPLACEMENT
 
 // Global flags to indicate if we received signals
-volatile sig_atomic_t sigint_received = 0;
-volatile sig_atomic_t sigtstp_received = 0;
+// volatile sig_atomic_t sigint_received = 0;
+// volatile sig_atomic_t sigtstp_received = 0;
 
 // SIGINT handler (Ctrl-C) - MINIMAL VERSION
 // SIGINT handler (Ctrl-C) - MINIMAL VERSION
+// void sigint_handler(int sig) {
+//     (void)sig;
+//     write(STDERR_FILENO, "DEBUG: SIGINT handler called\n", 30);
+    
+//     // Only send signal to foreground process group if one exists
+//     if (g_foreground_pgid > 0) {
+//         killpg(g_foreground_pgid, SIGINT);
+//         write(STDERR_FILENO, "DEBUG: Sent SIGINT to process group\n", 37);
+//     } else {
+//         write(STDERR_FILENO, "DEBUG: No foreground process group\n", 36);
+//     }
+    
+//     // Set flag for main loop
+//     sigint_received = 1;
+// }
+
+// void sigtstp_handler(int sig) {
+//     (void)sig;
+//     write(STDERR_FILENO, "DEBUG: SIGTSTP handler called\n", 31);
+    
+//     // Only send signal to foreground process group if one exists
+//     if (g_foreground_pgid > 0) {
+//         killpg(g_foreground_pgid, SIGTSTP);
+//         write(STDERR_FILENO, "DEBUG: Sent SIGTSTP to process group\n", 38);
+//     } else {
+//         write(STDERR_FILENO, "DEBUG: No foreground process group\n", 36);
+//     }
+    
+//     // Set flag for main loop  
+//     sigtstp_received = 1;
+// }
 void sigint_handler(int sig) {
     (void)sig;
     
@@ -871,23 +902,28 @@ void sigint_handler(int sig) {
         killpg(g_foreground_pgid, SIGINT);
     }
     
-    // Set flag for main loop
-    sigint_received = 1;
+    // Clear foreground process info immediately
+    g_foreground_pid = 0;
+    g_foreground_pgid = 0;
+    g_foreground_command[0] = '\0';
 }
 
-// SIGTSTP handler (Ctrl-Z) - MINIMAL VERSION  
 void sigtstp_handler(int sig) {
     (void)sig;
     
     // Only send signal to foreground process group if one exists
     if (g_foreground_pgid > 0) {
         killpg(g_foreground_pgid, SIGTSTP);
+        
+        // Add stopped job immediately (THIS is the key fix)
+        add_background_job_stopped(g_foreground_pid, g_foreground_command);
+        
+        // Clear foreground process info immediately
+        g_foreground_pid = 0;
+        g_foreground_pgid = 0;
+        g_foreground_command[0] = '\0';
     }
-    
-    // Set flag for main loop  
-    sigtstp_received = 1;
 }
-
 // Setup signal handlers using simple signal() function
 void setup_signal_handlers(void) {
     // Setup SIGINT handler (Ctrl-C)
@@ -907,8 +943,8 @@ void setup_signal_handlers(void) {
 // Function to handle signals after main loop iteration
 // void handle_pending_signals(void) {
 //     if (sigint_received) {
+//         printf("DEBUG: Processing SIGINT flag\n");
 //         sigint_received = 0;
-//         write(STDOUT_FILENO, "\n", 1);
         
 //         // Clear foreground process info
 //         g_foreground_pid = 0;
@@ -917,32 +953,21 @@ void setup_signal_handlers(void) {
 //     }
     
 //     if (sigtstp_received) {
+//         printf("DEBUG: Processing SIGTSTP flag, fg_pid=%d, fg_cmd='%s'\n", 
+//                g_foreground_pid, g_foreground_command);
 //         sigtstp_received = 0;
-//         write(STDOUT_FILENO, "\n", 1);
         
 //         if (g_foreground_pid > 0) {
-//             // Add the stopped process to background jobs
-//             int job_id = add_background_job(g_foreground_pid, g_foreground_command);
-//             if (job_id > 0) {
-//                 // Update the job state to stopped
-//                 for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
-//                     if (g_background_jobs[i].is_active && g_background_jobs[i].pid == g_foreground_pid) {
-//                         g_background_jobs[i].state = PROCESS_STOPPED;
-                        
-//                         // Print stopped message
-//                         char msg[256];
-//                         int len = snprintf(msg, sizeof(msg), "[%d] Stopped %s\n", job_id, g_foreground_command);
-//                         write(STDOUT_FILENO, msg, len);
-//                         break;
-//                     }
-//                 }
-//             }
+//             printf("DEBUG: Adding stopped job for PID %d\n", g_foreground_pid);
+//             add_background_job_stopped(g_foreground_pid, g_foreground_command);
+            
+//             // Clear foreground process info
+//             g_foreground_pid = 0;
+//             g_foreground_pgid = 0;
+//             g_foreground_command[0] = '\0';
+//         } else {
+//             printf("DEBUG: No foreground process to stop\n");
 //         }
-        
-//         // Clear foreground process info
-//         g_foreground_pid = 0;
-//         g_foreground_pgid = 0;
-//         g_foreground_command[0] = '\0';
 //     }
 // }
 
@@ -1058,7 +1083,7 @@ int execute_fg(char *args) {
     strncpy(job_command, job->command, sizeof(job_command) - 1);
     job_command[sizeof(job_command) - 1] = '\0';
     process_state_t job_state = job->state;
-    // int original_job_id = job->job_id;  // SAVE ORIGINAL JOB ID
+    int original_job_id = job->job_id;  // SAVE ORIGINAL JOB ID
     
     // Remove job from background jobs list BEFORE setting as foreground
     job->is_active = 0;
@@ -1115,18 +1140,20 @@ int execute_fg(char *args) {
     
     if (WIFSTOPPED(status)) {
         // Process was stopped again (Ctrl-Z), put it back in background
-        // Create new job with new ID (don't reuse original_job_id)
-        int new_job_id = add_background_job(job_pid, job_command);
-        if (new_job_id > 0) {
-            // Update the job state to stopped
-            for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
-                if (g_background_jobs[i].is_active && g_background_jobs[i].pid == job_pid) {
-                    g_background_jobs[i].state = PROCESS_STOPPED;
-                    break;
-                }
+        // Restore the job with original job ID
+        for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+            if (!g_background_jobs[i].is_active) {
+                g_background_jobs[i].job_id = original_job_id;  // Use original job ID
+                g_background_jobs[i].pid = job_pid;
+                g_background_jobs[i].is_active = 1;
+                g_background_jobs[i].state = PROCESS_STOPPED;
+                strncpy(g_background_jobs[i].command, job_command, sizeof(g_background_jobs[i].command) - 1);
+                g_background_jobs[i].command[sizeof(g_background_jobs[i].command) - 1] = '\0';
+                
+                printf("[%d] Stopped %s\n", original_job_id, job_command);
+                fflush(stdout);
+                break;
             }
-            printf("[%d] Stopped %s\n", new_job_id, job_command);
-            fflush(stdout);
         }
     }
     

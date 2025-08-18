@@ -300,7 +300,7 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         g_foreground_pgid = pid; // Process group ID is same as PID for process group leader
         strncpy(g_foreground_command, cmd->command, sizeof(g_foreground_command) - 1);
         g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
-
+        printf("DEBUG: Set foreground process: PID=%d, CMD='%s'\n", g_foreground_pid, g_foreground_command);
         // Wait for child to complete
         int status;
         pid_t result;
@@ -336,17 +336,17 @@ int execute_command_with_redirection(parsed_command_t *cmd)
             }
         }
 
-        if (WIFSTOPPED(status))
-{
-    // Process was stopped (Ctrl-Z) - use the new function
-    int job_id = add_background_job_stopped(pid, cmd->command);
+//         if (WIFSTOPPED(status))
+// {
+//     // Process was stopped (Ctrl-Z) - use the new function
+//     add_background_job_stopped(pid, cmd->command);
     
-    // Clear foreground process info (process is now in background)
-    g_foreground_pid = 0;
-    g_foreground_pgid = 0;
-    g_foreground_command[0] = '\0';
-    return 0;
-}
+//     // Clear foreground process info (process is now in background)
+//     g_foreground_pid = 0;
+//     g_foreground_pgid = 0;
+//     g_foreground_command[0] = '\0';
+//     return 0;
+// }
 
         // Process completed normally
         g_foreground_pid = 0;
@@ -636,7 +636,7 @@ int execute_pipeline(command_pipeline_t *pipeline)
             {
                 strncat(cmd_str, " | ...", sizeof(cmd_str) - strlen(cmd_str) - 1);
             }
-            add_background_job(pids[pipeline->cmd_count - 1], cmd_str);
+            add_background_job_running(pids[pipeline->cmd_count - 1], cmd_str);
         }
         // For background processes, we don't wait, so status is 0
         final_status = 0;
@@ -678,7 +678,8 @@ int execute_pipeline(command_pipeline_t *pipeline)
                 if (WIFSTOPPED(status))
                 {
                     // Process was stopped, handled by signal handler
-                    final_status = 0;
+                    // final_status = 0;
+                    return 0;
                 }
             }
         }
@@ -812,7 +813,16 @@ int execute_command_background(parsed_command_t *cmd)
     else
     {
         // Parent process - add to background jobs and don't wait
-        add_background_job(pid, cmd->command);
+        char full_command[256] = {0};
+        strncpy(full_command, cmd->command, sizeof(full_command) - 1);
+        
+        // Add arguments to the command string
+        for (int i = 0; i < cmd->arg_count; i++) {
+            strncat(full_command, " ", sizeof(full_command) - strlen(full_command) - 1);
+            strncat(full_command, cmd->args[i], sizeof(full_command) - strlen(full_command) - 1);
+        }
+        
+        add_background_job_running(pid, full_command);
         return 0;
     }
 }
