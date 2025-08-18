@@ -177,6 +177,8 @@ static int execute_builtin(parsed_command_t *cmd) {
 
 // Replace the entire execute_command_with_redirection function in src/redirection.c with this:
 
+// Replace this function in src/redirection.c
+// Replace this function in src/redirection.c
 int execute_command_with_redirection(parsed_command_t *cmd)
 {
     if (!cmd || !cmd->command)
@@ -300,55 +302,16 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         g_foreground_pgid = pid; // Process group ID is same as PID for process group leader
         strncpy(g_foreground_command, cmd->command, sizeof(g_foreground_command) - 1);
         g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
-        printf("DEBUG: Set foreground process: PID=%d, CMD='%s'\n", g_foreground_pid, g_foreground_command);
+        
         // Wait for child to complete
         int status;
         pid_t result;
-
-        while (1)
+        do
         {
             result = waitpid(pid, &status, WUNTRACED);
+        } while (result == -1 && errno == EINTR);
 
-            if (result == -1)
-            {
-                if (errno == EINTR)
-                {
-                    // Signal interrupted waitpid, try again
-                    continue;
-                }
-                else
-                {
-                    perror("waitpid failed");
-                    g_foreground_pid = 0;
-                    g_foreground_pgid = 0;
-                    g_foreground_command[0] = '\0';
-                    return -1;
-                }
-            }
-            else if (result == pid)
-            {
-                // Successfully got child status, break out of loop
-                break;
-            }
-            else
-            {
-                continue;
-            }
-        }
-
-//         if (WIFSTOPPED(status))
-// {
-//     // Process was stopped (Ctrl-Z) - use the new function
-//     add_background_job_stopped(pid, cmd->command);
-    
-//     // Clear foreground process info (process is now in background)
-//     g_foreground_pid = 0;
-//     g_foreground_pgid = 0;
-//     g_foreground_command[0] = '\0';
-//     return 0;
-// }
-
-        // Process completed normally
+        // Process completed normally or was stopped by signal handler
         g_foreground_pid = 0;
         g_foreground_pgid = 0;
         g_foreground_command[0] = '\0';
@@ -356,7 +319,6 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     }
 }
-// Add this to src/redirection.c
 
 // Execute a single command in a pipeline
 // Execute a single command in a pipeline

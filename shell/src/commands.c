@@ -908,16 +908,17 @@ void sigint_handler(int sig) {
     g_foreground_command[0] = '\0';
 }
 
+// Replace this function in src/commands.c
 void sigtstp_handler(int sig) {
     (void)sig;
-    
+
     // Only send signal to foreground process group if one exists
     if (g_foreground_pgid > 0) {
         killpg(g_foreground_pgid, SIGTSTP);
-        
-        // Add stopped job immediately (THIS is the key fix)
+
+        // Add stopped job immediately
         add_background_job_stopped(g_foreground_pid, g_foreground_command);
-        
+
         // Clear foreground process info immediately
         g_foreground_pid = 0;
         g_foreground_pgid = 0;
