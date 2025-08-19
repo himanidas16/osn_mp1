@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -899,42 +900,72 @@ void sigint_handler(int sig) {
     
     // Only send signal to foreground process group if one exists
     if (g_foreground_pgid > 0) {
+        // Send to process group, not individual process
         killpg(g_foreground_pgid, SIGINT);
+        
+        // Give the process a moment to handle the signal
+        usleep(10000); // 10ms
+        
+        // Clear foreground process info
+        g_foreground_pid = 0;
+        g_foreground_pgid = 0;
+        g_foreground_command[0] = '\0';
     }
-    
-    // Clear foreground process info immediately
-    g_foreground_pid = 0;
-    g_foreground_pgid = 0;
-    g_foreground_command[0] = '\0';
+    // If no foreground process, ignore the signal (don't exit shell)
 }
+
+
 
 // Replace this function in src/commands.c
 void sigtstp_handler(int sig) {
     (void)sig;
 
-    // Only send signal to foreground process group if one exists
-    if (g_foreground_pgid > 0) {
+    // Only handle if there's actually a foreground process
+    if (g_foreground_pgid > 0 && g_foreground_pid > 0) {
+        // Send SIGTSTP to the process group
         killpg(g_foreground_pgid, SIGTSTP);
-
-        // Add stopped job immediately
-        add_background_job_stopped(g_foreground_pid, g_foreground_command);
-
-        // Clear foreground process info immediately
+        
+        // Give the process a moment to stop
+        usleep(10000); // 10ms
+        
+        // Save process info before clearing
+        pid_t stopped_pid = g_foreground_pid;
+        char stopped_command[256];
+        strncpy(stopped_command, g_foreground_command, sizeof(stopped_command) - 1);
+        stopped_command[sizeof(stopped_command) - 1] = '\0';
+        
+        // Clear foreground process info BEFORE adding to background
         g_foreground_pid = 0;
         g_foreground_pgid = 0;
         g_foreground_command[0] = '\0';
+        
+        // Add stopped job to background
+        add_background_job_stopped(stopped_pid, stopped_command);
     }
+    // If no foreground process, the shell itself should ignore SIGTSTP
 }
 // Setup signal handlers using simple signal() function
 void setup_signal_handlers(void) {
-    // Setup SIGINT handler (Ctrl-C)
-    if (signal(SIGINT, sigint_handler) == SIG_ERR) {
-        perror("signal SIGINT");
+    struct sigaction sa_int, sa_tstp;
+    
+    // Requirement 1 for Ctrl-C: Install signal handler for SIGINT
+    memset(&sa_int, 0, sizeof(sa_int));
+    sa_int.sa_handler = sigint_handler;
+    sigemptyset(&sa_int.sa_mask);
+    sa_int.sa_flags = SA_RESTART;
+    
+    if (sigaction(SIGINT, &sa_int, NULL) == -1) {
+        perror("sigaction SIGINT");
     }
     
-    // Setup SIGTSTP handler (Ctrl-Z)
-    if (signal(SIGTSTP, sigtstp_handler) == SIG_ERR) {
-        perror("signal SIGTSTP");
+    // Requirement 1 for Ctrl-Z: Install signal handler for SIGTSTP
+    memset(&sa_tstp, 0, sizeof(sa_tstp));
+    sa_tstp.sa_handler = sigtstp_handler;
+    sigemptyset(&sa_tstp.sa_mask);
+    sa_tstp.sa_flags = SA_RESTART;
+    
+    if (sigaction(SIGTSTP, &sa_tstp, NULL) == -1) {
+        perror("sigaction SIGTSTP");
     }
     
     // Ignore SIGTTOU to avoid being stopped when writing to terminal

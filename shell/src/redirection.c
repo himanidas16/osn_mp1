@@ -10,6 +10,27 @@
 #include "../include/shell.h"
 #include "../include/commands.h"
 
+
+// static char *trim_whitespace(char *str)
+// {
+//     char *end;
+
+//     // Trim leading space
+//     while (*str == ' ' || *str == '\t')
+//         str++;
+
+//     if (*str == 0)
+//         return str; // All spaces?
+
+//     // Trim trailing space
+//     end = str + strlen(str) - 1;
+//     while (end > str && (*end == ' ' || *end == '\t'))
+//         end--;
+
+//     end[1] = '\0';
+//     return str;
+// }
+
 // Handle input redirection (Part C.1)
 int handle_input_redirection(const char *filename)
 {
@@ -167,18 +188,9 @@ static int execute_builtin(parsed_command_t *cmd) {
     return -1;
 }
 
-// Execute command with redirection
-// Replace the execute_command_with_redirection function in src/redirection.c
-// This version adds foreground process tracking for signal handling
+// Enhanced execute_command_with_redirection function in src/redirection.c
+// Replace the existing function with this improved version
 
-// Replace execute_command_with_redirection in src/redirection.c
-
-// Replace execute_command_with_redirection in src/redirection.c with this debug version
-
-// Replace the entire execute_command_with_redirection function in src/redirection.c with this:
-
-// Replace this function in src/redirection.c
-// Replace this function in src/redirection.c
 int execute_command_with_redirection(parsed_command_t *cmd)
 {
     if (!cmd || !cmd->command)
@@ -241,7 +253,7 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         return result;
     }
 
-    // For external commands, use fork/exec
+    // For external commands, use fork/exec with proper process group management
     pid_t pid = fork();
     if (pid == -1)
     {
@@ -298,27 +310,201 @@ int execute_command_with_redirection(parsed_command_t *cmd)
     else
     {
         // Parent process - track this as foreground process
+        
+        // Wait a tiny bit for child to establish its process group
+        // usleep(1000); // 1ms
+        
+        // Set foreground process info
         g_foreground_pid = pid;
         g_foreground_pgid = pid; // Process group ID is same as PID for process group leader
+        
+        // Copy command name safely
         strncpy(g_foreground_command, cmd->command, sizeof(g_foreground_command) - 1);
         g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
         
         // Wait for child to complete
         int status;
         pid_t result;
-        do
-        {
+        
+        while (1) {
             result = waitpid(pid, &status, WUNTRACED);
-        } while (result == -1 && errno == EINTR);
+            
+            if (result == -1) {
+                if (errno == EINTR) {
+                    // Interrupted by signal, check if we still have a foreground process
+                    if (g_foreground_pid == 0) {
+                        // Process was handled by signal handler, we're done
+                        return 0;
+                    }
+                    continue; // Keep waiting
+                } else {
+                    perror("waitpid failed");
+                    break;
+                }
+            } else if (result == pid) {
+                if (WIFSTOPPED(status)) {
+                    // Process was stopped by signal handler
+                    // Signal handler already moved it to background, we're done
+                    return 0;
+                } else {
+                    // Process completed normally
+                    break;
+                }
+            }
+        }
 
-        // Process completed normally or was stopped by signal handler
-        g_foreground_pid = 0;
-        g_foreground_pgid = 0;
-        g_foreground_command[0] = '\0';
+        // Clear foreground process info if not already cleared by signal handler
+        if (g_foreground_pid == pid) {
+            g_foreground_pid = 0;
+            g_foreground_pgid = 0;
+            g_foreground_command[0] = '\0';
+        }
 
         return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     }
 }
+
+// Enhanced execute_fg function to properly restore process groups
+// int execute_fg(char *args) {
+//     background_job_t* job = NULL;
+    
+//     if (!args || strlen(trim_whitespace(args)) == 0) {
+//         // No job number provided, use most recent job
+//         job = find_most_recent_job();
+//         if (!job) {
+//             printf("No jobs in background\n");
+//             return -1;
+//         }
+//     } else {
+//         // Parse job number
+//         char *args_copy = malloc(strlen(args) + 1);
+//         if (!args_copy) {
+//             perror("fg: malloc failed");
+//             return -1;
+//         }
+//         strcpy(args_copy, args);
+        
+//         char *token = strtok(args_copy, " \t");
+//         if (!token) {
+//             printf("fg: invalid job number\n");
+//             free(args_copy);
+//             return -1;
+//         }
+        
+//         char *endptr;
+//         long job_id_long = strtol(token, &endptr, 10);
+//         if (*endptr != '\0' || job_id_long <= 0) {
+//             printf("fg: invalid job number '%s'\n", token);
+//             free(args_copy);
+//             return -1;
+//         }
+        
+//         int job_id = (int)job_id_long;
+//         job = find_job_by_id(job_id);
+//         if (!job) {
+//             printf("No such job\n");
+//             free(args_copy);
+//             return -1;
+//         }
+        
+//         free(args_copy);
+//     }
+    
+//     // Check if the process still exists
+//     if (kill(job->pid, 0) == -1) {
+//         if (errno == ESRCH) {
+//             printf("No such job\n");
+//             job->is_active = 0;
+//             return -1;
+//         }
+//     }
+    
+//     // Print the command being brought to foreground
+//     printf("%s\n", job->command);
+//     fflush(stdout);
+    
+//     // Save job info before removing from background list
+//     pid_t job_pid = job->pid;
+//     char job_command[256];
+//     strncpy(job_command, job->command, sizeof(job_command) - 1);
+//     job_command[sizeof(job_command) - 1] = '\0';
+//     process_state_t job_state = job->state;
+//     // int original_job_id = job->job_id;
+    
+//     // Remove job from background jobs list BEFORE setting as foreground
+//     job->is_active = 0;
+    
+//     // Set this job as the foreground job with proper process group
+//     g_foreground_pid = job_pid;
+//     g_foreground_pgid = job_pid; // Use the PID as process group ID
+//     strncpy(g_foreground_command, job_command, sizeof(g_foreground_command) - 1);
+//     g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
+    
+//     // If job is stopped, send SIGCONT to resume it
+//     if (job_state == PROCESS_STOPPED) {
+//         if (killpg(job_pid, SIGCONT) == -1) {
+//             // Try individual process if process group fails
+//             if (kill(job_pid, SIGCONT) == -1) {
+//                 if (errno == ESRCH) {
+//                     printf("No such job\n");
+//                     g_foreground_pid = 0;
+//                     g_foreground_pgid = 0;
+//                     g_foreground_command[0] = '\0';
+//                     return -1;
+//                 }
+//                 perror("fg: failed to send SIGCONT");
+//                 g_foreground_pid = 0;
+//                 g_foreground_pgid = 0;
+//                 g_foreground_command[0] = '\0';
+//                 return -1;
+//             }
+//         }
+//     }
+    
+//     // Wait for the job to complete or stop again
+//     int status;
+//     pid_t result;
+    
+//     while (1) {
+//         result = waitpid(job_pid, &status, WUNTRACED);
+        
+//         if (result == -1) {
+//             if (errno == EINTR) {
+//                 // Check if signal handler cleared our foreground process
+//                 if (g_foreground_pid == 0) {
+//                     // Signal handler took care of it
+//                     return 0;
+//                 }
+//                 continue;
+//             } else if (errno == ECHILD) {
+//                 break;
+//             } else {
+//                 perror("fg: waitpid failed");
+//                 g_foreground_pid = 0;
+//                 g_foreground_pgid = 0;
+//                 g_foreground_command[0] = '\0';
+//                 return -1;
+//             }
+//         } else if (result == job_pid) {
+//             if (WIFSTOPPED(status)) {
+//                 // Process was stopped again - signal handler should have handled this
+//                 return 0;
+//             } else {
+//                 // Process completed
+//                 break;
+//             }
+//         }
+//     }
+    
+//     // Clear foreground process info if not already cleared
+//     if (g_foreground_pid == job_pid) {
+//         g_foreground_pid = 0;
+//         g_foreground_pgid = 0;
+//         g_foreground_command[0] = '\0';
+//     }
+    
+//     return WIFEXITED(status) ? WEXITSTATUS(status) : 0;
+// }
 
 // Execute a single command in a pipeline
 // Execute a single command in a pipeline
