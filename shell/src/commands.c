@@ -972,36 +972,7 @@ void setup_signal_handlers(void) {
     signal(SIGTTOU, SIG_IGN);
 }
 
-// Function to handle signals after main loop iteration
-// void handle_pending_signals(void) {
-//     if (sigint_received) {
-//         printf("DEBUG: Processing SIGINT flag\n");
-//         sigint_received = 0;
-        
-//         // Clear foreground process info
-//         g_foreground_pid = 0;
-//         g_foreground_pgid = 0;
-//         g_foreground_command[0] = '\0';
-//     }
-    
-//     if (sigtstp_received) {
-//         printf("DEBUG: Processing SIGTSTP flag, fg_pid=%d, fg_cmd='%s'\n", 
-//                g_foreground_pid, g_foreground_command);
-//         sigtstp_received = 0;
-        
-//         if (g_foreground_pid > 0) {
-//             printf("DEBUG: Adding stopped job for PID %d\n", g_foreground_pid);
-//             add_background_job_stopped(g_foreground_pid, g_foreground_command);
-            
-//             // Clear foreground process info
-//             g_foreground_pid = 0;
-//             g_foreground_pgid = 0;
-//             g_foreground_command[0] = '\0';
-//         } else {
-//             printf("DEBUG: No foreground process to stop\n");
-//         }
-//     }
-// }
+
 
 // Cleanup and exit function (for Ctrl-D)
 void cleanup_and_exit(void) {
