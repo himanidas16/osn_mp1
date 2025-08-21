@@ -3,6 +3,8 @@
         "random": "c",
         "algorithm": "c",
         "stdlib.h": "c",
-        "prompt.h": "c"
+        "prompt.h": "c",
+        "errno.h": "c",
+        "redirection.h": "c"
     }
 }
