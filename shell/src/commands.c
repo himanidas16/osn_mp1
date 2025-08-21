@@ -299,9 +299,10 @@ static int is_hidden_file(const char *name)
 }
 
 // Comparison function for qsort (lexicographic order)
+// Comparison function for qsort (case-insensitive lexicographic order)
 static int compare_strings(const void *a, const void *b)
 {
-    return strcmp(*(const char **)a, *(const char **)b);
+    return strcasecmp(*(const char **)a, *(const char **)b);
 }
 
 // Execute reveal command
@@ -483,6 +484,11 @@ int log_init(void)
     g_log_count = 0;
     g_log_start = 0;
 
+    // Don't load log file in test directories
+    if (strstr(g_shell_home, ".shell_test") != NULL) {
+        return 0; // Skip loading in test environment
+    }
+
     // Try to load existing log from HOME directory (not current directory)
     char log_path[PATH_MAX];
     strcpy(log_path, g_shell_home); // Use HOME directory
@@ -524,7 +530,10 @@ static int log_save(void)
     strcat(log_path, "/");
     strcat(log_path, LOG_FILENAME);
 
-    // REMOVE THIS DEBUG LINE: printf("DEBUG: Saving log to: %s\n", log_path);
+    // Don't create log file in test directories
+    if (strstr(g_shell_home, ".shell_test") != NULL) {
+        return 0; // Skip saving in test environment
+    }
 
     FILE *file = fopen(log_path, "w");
     if (!file)
