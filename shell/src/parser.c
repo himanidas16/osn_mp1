@@ -346,18 +346,29 @@ int parse_pipeline(const char *input, command_pipeline_t *pipeline) {
         return result;
     }
     
-    // Count pipes to determine number of commands
+    // Count separators (both | and &) to determine number of commands
     temp = input;
-    int pipe_count = 0;
+    int separator_count = 0;
     
     while (*temp) {
         if (*temp == '|' && *(temp + 1) != '|') {
-            pipe_count++;
+            separator_count++;
+        } else if (*temp == '&') {
+            // Check if this & is at the end (already handled above) or in the middle
+            const char *check = temp + 1;
+            while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') {
+                check++;
+            }
+            if (*check != '\0') { // Not at the end, it's a separator
+                separator_count++;
+                // For & separator, mark as background
+                pipeline->is_background = 1;
+            }
         }
         temp++;
     }
     
-    int cmd_count = pipe_count + 1;
+    int cmd_count = separator_count + 1;
     
     // Allocate command array
     pipeline->commands = malloc(cmd_count * sizeof(parsed_command_t));
@@ -371,9 +382,21 @@ int parse_pipeline(const char *input, command_pipeline_t *pipeline) {
     int cmd_index = 0;
     
     while (*str && cmd_index < cmd_count) {
-        // Find the end of current command (next pipe or end of string)
+        // Find the end of current command (next separator or end of string)
         const char *cmd_end = str;
-        while (*cmd_end && !(*cmd_end == '|' && *(cmd_end + 1) != '|')) {
+        while (*cmd_end) {
+            if (*cmd_end == '|' && *(cmd_end + 1) != '|') {
+                break; // Found pipe separator
+            } else if (*cmd_end == '&') {
+                // Check if this & is a separator (not at the end)
+                const char *check = cmd_end + 1;
+                while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') {
+                    check++;
+                }
+                if (*check != '\0') { // Not at the end, it's a separator
+                    break;
+                }
+            }
             cmd_end++;
         }
         
@@ -398,7 +421,7 @@ int parse_pipeline(const char *input, command_pipeline_t *pipeline) {
         cmd_index++;
         
         // Move to next command
-        if (*cmd_end == '|') {
+        if (*cmd_end == '|' || *cmd_end == '&') {
             str = cmd_end + 1;
             cmd_start = str;
         } else {
@@ -444,37 +467,61 @@ void cleanup_pipeline(command_pipeline_t *pipeline) {
 // Parse sequential commands separated by semicolons
 // Replace your parse_sequential_commands function in src/parser.c
 
+// Replace your parse_sequential_commands function in src/parser.c with this fixed version:
+
 int parse_sequential_commands(const char *input, sequential_commands_t *seq_cmds) {
     if (!input || !seq_cmds) return -1;
     
     memset(seq_cmds, 0, sizeof(sequential_commands_t));
     
-    // Count semicolons to determine number of command groups
+    // Count separators (both ; and &) to determine number of command groups
     const char *temp = input;
-    int semicolon_count = 0;
+    int separator_count = 0;
     
     while (*temp) {
         if (*temp == ';') {
-            semicolon_count++;
+            separator_count++;
+        } else if (*temp == '&') {
+            // Check if this & is not at the very end (trailing & is handled in pipeline parsing)
+            const char *check = temp + 1;
+            while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') {
+                check++;
+            }
+            // If there's more content after &, it's a separator
+            if (*check != '\0') {
+                separator_count++;
+            }
         }
         temp++;
     }
     
-    int max_pipeline_count = semicolon_count + 1;
+    int max_pipeline_count = separator_count + 1;
     
-    // Allocate pipeline array (may be larger than needed due to empty commands)
+    // Allocate pipeline array
     seq_cmds->pipelines = malloc(max_pipeline_count * sizeof(command_pipeline_t));
     if (!seq_cmds->pipelines) return -1;
     
-    // Parse each command group separated by semicolons
+    // Parse each command group separated by ; or &
     const char *str = input;
     const char *cmd_start = str;
     int pipeline_index = 0;
     
     while (*str) {
-        // Find the end of current command group (next semicolon or end of string)
+        // Find the end of current command group (next ; or & or end of string)
         const char *cmd_end = str;
-        while (*cmd_end && *cmd_end != ';') {
+        while (*cmd_end) {
+            if (*cmd_end == ';') {
+                break; // Found semicolon separator
+            } else if (*cmd_end == '&') {
+                // Check if this & is a separator (not at the end)
+                const char *check = cmd_end + 1;
+                while (*check == ' ' || *check == '\t' || *check == '\n' || *check == '\r') {
+                    check++;
+                }
+                if (*check != '\0') { // Not at the end, it's a separator
+                    break;
+                }
+            }
             cmd_end++;
         }
         
@@ -482,7 +529,6 @@ int parse_sequential_commands(const char *input, sequential_commands_t *seq_cmds
         int cmd_len = cmd_end - cmd_start;
         char *cmd_str = malloc(cmd_len + 1);
         if (!cmd_str) {
-            // Cleanup what we've allocated so far
             seq_cmds->pipeline_count = pipeline_index;
             cleanup_sequential_commands(seq_cmds);
             return -1;
@@ -505,13 +551,26 @@ int parse_sequential_commands(const char *input, sequential_commands_t *seq_cmds
         if (strlen(trimmed_cmd) == 0) {
             free(cmd_str);
             // Move to next command group
-            if (*cmd_end == ';') {
+            if (*cmd_end == ';' || *cmd_end == '&') {
                 str = cmd_end + 1;
                 cmd_start = str;
             } else {
                 break;
             }
             continue;
+        }
+        
+        // If this command group was separated by &, add & to make it background
+        if (*cmd_end == '&') {
+            // Check if the command doesn't already end with &
+            char *check_end = trimmed_cmd + strlen(trimmed_cmd) - 1;
+            while (check_end > trimmed_cmd && (*check_end == ' ' || *check_end == '\t')) {
+                check_end--;
+            }
+            if (*check_end != '&') {
+                // Add & to make it background
+                strcat(trimmed_cmd, " &");
+            }
         }
         
         // Parse this command group as a pipeline
@@ -526,7 +585,7 @@ int parse_sequential_commands(const char *input, sequential_commands_t *seq_cmds
         pipeline_index++;
         
         // Move to next command group
-        if (*cmd_end == ';') {
+        if (*cmd_end == ';' || *cmd_end == '&') {
             str = cmd_end + 1;
             cmd_start = str;
         } else {

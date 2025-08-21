@@ -10,27 +10,6 @@
 #include "../include/shell.h"
 #include "../include/commands.h"
 
-
-// static char *trim_whitespace(char *str)
-// {
-//     char *end;
-
-//     // Trim leading space
-//     while (*str == ' ' || *str == '\t')
-//         str++;
-
-//     if (*str == 0)
-//         return str; // All spaces?
-
-//     // Trim trailing space
-//     end = str + strlen(str) - 1;
-//     while (end > str && (*end == ' ' || *end == '\t'))
-//         end--;
-
-//     end[1] = '\0';
-//     return str;
-// }
-
 // Handle input redirection (Part C.1)
 int handle_input_redirection(const char *filename)
 {
@@ -101,10 +80,6 @@ int handle_output_redirection(const char *filename, int append_mode)
 }
 
 // Check if command is a built-in command
-// Update the is_builtin_command function in src/redirection.c
-
-// Update the is_builtin_command function in src/redirection.c
-
 static int is_builtin_command(const char *command)
 {
     return (strcmp(command, "hop") == 0 ||
@@ -117,13 +92,8 @@ static int is_builtin_command(const char *command)
 }
 
 // Execute built-in command with arguments
-// Update the execute_builtin function in src/redirection.c
-
-// Update the execute_builtin function in src/redirection.c
-
 static int execute_builtin(parsed_command_t *cmd) {
     if (strcmp(cmd->command, "hop") == 0) {
-        // Build arguments string for hop
         char args_str[1024] = {0};
         for (int i = 0; i < cmd->arg_count; i++) {
             if (i > 0)
@@ -151,11 +121,9 @@ static int execute_builtin(parsed_command_t *cmd) {
         return execute_log(args_str[0] ? args_str : NULL);
     }
     else if (strcmp(cmd->command, "activities") == 0) {
-        // Activities command doesn't take arguments
         return execute_activities();
     }
     else if (strcmp(cmd->command, "ping") == 0) {
-        // Build arguments string for ping
         char args_str[1024] = {0};
         for (int i = 0; i < cmd->arg_count; i++) {
             if (i > 0)
@@ -165,7 +133,6 @@ static int execute_builtin(parsed_command_t *cmd) {
         return execute_ping(args_str[0] ? args_str : NULL);
     }
     else if (strcmp(cmd->command, "fg") == 0) {
-        // Build arguments string for fg
         char args_str[1024] = {0};
         for (int i = 0; i < cmd->arg_count; i++) {
             if (i > 0)
@@ -175,7 +142,6 @@ static int execute_builtin(parsed_command_t *cmd) {
         return execute_fg(args_str[0] ? args_str : NULL);
     }
     else if (strcmp(cmd->command, "bg") == 0) {
-        // Build arguments string for bg
         char args_str[1024] = {0};
         for (int i = 0; i < cmd->arg_count; i++) {
             if (i > 0)
@@ -189,8 +155,6 @@ static int execute_builtin(parsed_command_t *cmd) {
 }
 
 // Enhanced execute_command_with_redirection function in src/redirection.c
-// Replace the existing function with this improved version
-
 int execute_command_with_redirection(parsed_command_t *cmd)
 {
     if (!cmd || !cmd->command)
@@ -198,10 +162,8 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         return -1;
     }
 
-    // For built-in commands, handle redirection differently
     if (is_builtin_command(cmd->command))
     {
-        // Save original stdin/stdout
         int saved_stdin = -1, saved_stdout = -1;
 
         if (cmd->input_file)
@@ -231,14 +193,11 @@ int execute_command_with_redirection(parsed_command_t *cmd)
             }
         }
 
-        // Execute built-in command while redirection is active
         int result = execute_builtin(cmd);
 
-        // CRITICAL: Flush output before restoring stdout
         fflush(stdout);
         fflush(stderr);
 
-        // Restore original stdin/stdout
         if (saved_stdin != -1)
         {
             dup2(saved_stdin, STDIN_FILENO);
@@ -253,7 +212,6 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         return result;
     }
 
-    // For external commands, use fork/exec with proper process group management
     pid_t pid = fork();
     if (pid == -1)
     {
@@ -263,28 +221,22 @@ int execute_command_with_redirection(parsed_command_t *cmd)
 
     if (pid == 0)
     {
-        // Child process
-
-        // Create a new process group for this child
         if (setpgid(0, 0) == -1)
         {
             perror("setpgid failed");
             exit(1);
         }
 
-        // Handle input redirection
         if (handle_input_redirection(cmd->input_file) == -1)
         {
             exit(1);
         }
 
-        // Handle output redirection
         if (handle_output_redirection(cmd->output_file, cmd->append_mode) == -1)
         {
             exit(1);
         }
 
-        // Prepare arguments for execvp
         char **args = malloc((cmd->arg_count + 2) * sizeof(char *));
         if (!args)
         {
@@ -299,61 +251,45 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         }
         args[cmd->arg_count + 1] = NULL;
 
-        // Execute the command
         execvp(cmd->command, args);
 
-        // If execvp returns, there was an error
         perror("execvp failed");
         free(args);
         exit(1);
     }
     else
     {
-        // Parent process - track this as foreground process
-        
-        // Wait a tiny bit for child to establish its process group
-        // usleep(1000); // 1ms
-        
-        // Set foreground process info
         g_foreground_pid = pid;
-        g_foreground_pgid = pid; // Process group ID is same as PID for process group leader
-        
-        // Copy command name safely
+        g_foreground_pgid = pid;
+
         strncpy(g_foreground_command, cmd->command, sizeof(g_foreground_command) - 1);
         g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
-        
-        // Wait for child to complete
+
         int status;
         pid_t result;
-        
+
         while (1) {
             result = waitpid(pid, &status, WUNTRACED);
-            
+
             if (result == -1) {
                 if (errno == EINTR) {
-                    // Interrupted by signal, check if we still have a foreground process
                     if (g_foreground_pid == 0) {
-                        // Process was handled by signal handler, we're done
                         return 0;
                     }
-                    continue; // Keep waiting
+                    continue;
                 } else {
                     perror("waitpid failed");
                     break;
                 }
             } else if (result == pid) {
                 if (WIFSTOPPED(status)) {
-                    // Process was stopped by signal handler
-                    // Signal handler already moved it to background, we're done
                     return 0;
                 } else {
-                    // Process completed normally
                     break;
                 }
             }
         }
 
-        // Clear foreground process info if not already cleared by signal handler
         if (g_foreground_pid == pid) {
             g_foreground_pid = 0;
             g_foreground_pgid = 0;
@@ -364,173 +300,24 @@ int execute_command_with_redirection(parsed_command_t *cmd)
     }
 }
 
-// Enhanced execute_fg function to properly restore process groups
-// int execute_fg(char *args) {
-//     background_job_t* job = NULL;
-    
-//     if (!args || strlen(trim_whitespace(args)) == 0) {
-//         // No job number provided, use most recent job
-//         job = find_most_recent_job();
-//         if (!job) {
-//             printf("No jobs in background\n");
-//             return -1;
-//         }
-//     } else {
-//         // Parse job number
-//         char *args_copy = malloc(strlen(args) + 1);
-//         if (!args_copy) {
-//             perror("fg: malloc failed");
-//             return -1;
-//         }
-//         strcpy(args_copy, args);
-        
-//         char *token = strtok(args_copy, " \t");
-//         if (!token) {
-//             printf("fg: invalid job number\n");
-//             free(args_copy);
-//             return -1;
-//         }
-        
-//         char *endptr;
-//         long job_id_long = strtol(token, &endptr, 10);
-//         if (*endptr != '\0' || job_id_long <= 0) {
-//             printf("fg: invalid job number '%s'\n", token);
-//             free(args_copy);
-//             return -1;
-//         }
-        
-//         int job_id = (int)job_id_long;
-//         job = find_job_by_id(job_id);
-//         if (!job) {
-//             printf("No such job\n");
-//             free(args_copy);
-//             return -1;
-//         }
-        
-//         free(args_copy);
-//     }
-    
-//     // Check if the process still exists
-//     if (kill(job->pid, 0) == -1) {
-//         if (errno == ESRCH) {
-//             printf("No such job\n");
-//             job->is_active = 0;
-//             return -1;
-//         }
-//     }
-    
-//     // Print the command being brought to foreground
-//     printf("%s\n", job->command);
-//     fflush(stdout);
-    
-//     // Save job info before removing from background list
-//     pid_t job_pid = job->pid;
-//     char job_command[256];
-//     strncpy(job_command, job->command, sizeof(job_command) - 1);
-//     job_command[sizeof(job_command) - 1] = '\0';
-//     process_state_t job_state = job->state;
-//     // int original_job_id = job->job_id;
-    
-//     // Remove job from background jobs list BEFORE setting as foreground
-//     job->is_active = 0;
-    
-//     // Set this job as the foreground job with proper process group
-//     g_foreground_pid = job_pid;
-//     g_foreground_pgid = job_pid; // Use the PID as process group ID
-//     strncpy(g_foreground_command, job_command, sizeof(g_foreground_command) - 1);
-//     g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
-    
-//     // If job is stopped, send SIGCONT to resume it
-//     if (job_state == PROCESS_STOPPED) {
-//         if (killpg(job_pid, SIGCONT) == -1) {
-//             // Try individual process if process group fails
-//             if (kill(job_pid, SIGCONT) == -1) {
-//                 if (errno == ESRCH) {
-//                     printf("No such job\n");
-//                     g_foreground_pid = 0;
-//                     g_foreground_pgid = 0;
-//                     g_foreground_command[0] = '\0';
-//                     return -1;
-//                 }
-//                 perror("fg: failed to send SIGCONT");
-//                 g_foreground_pid = 0;
-//                 g_foreground_pgid = 0;
-//                 g_foreground_command[0] = '\0';
-//                 return -1;
-//             }
-//         }
-//     }
-    
-//     // Wait for the job to complete or stop again
-//     int status;
-//     pid_t result;
-    
-//     while (1) {
-//         result = waitpid(job_pid, &status, WUNTRACED);
-        
-//         if (result == -1) {
-//             if (errno == EINTR) {
-//                 // Check if signal handler cleared our foreground process
-//                 if (g_foreground_pid == 0) {
-//                     // Signal handler took care of it
-//                     return 0;
-//                 }
-//                 continue;
-//             } else if (errno == ECHILD) {
-//                 break;
-//             } else {
-//                 perror("fg: waitpid failed");
-//                 g_foreground_pid = 0;
-//                 g_foreground_pgid = 0;
-//                 g_foreground_command[0] = '\0';
-//                 return -1;
-//             }
-//         } else if (result == job_pid) {
-//             if (WIFSTOPPED(status)) {
-//                 // Process was stopped again - signal handler should have handled this
-//                 return 0;
-//             } else {
-//                 // Process completed
-//                 break;
-//             }
-//         }
-//     }
-    
-//     // Clear foreground process info if not already cleared
-//     if (g_foreground_pid == job_pid) {
-//         g_foreground_pid = 0;
-//         g_foreground_pgid = 0;
-//         g_foreground_command[0] = '\0';
-//     }
-    
-//     return WIFEXITED(status) ? WEXITSTATUS(status) : 0;
-// }
-
-// Execute a single command in a pipeline
 // Execute a single command in a pipeline
 static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int output_fd, pid_t pgid)
 {
-    // Check if it's a built-in command
     if (is_builtin_command(cmd->command))
     {
-        // Built-in commands in pipes need special handling
-        // Save original stdin/stdout
         int saved_stdin = dup(STDIN_FILENO);
         int saved_stdout = dup(STDOUT_FILENO);
 
-        // Handle pipe input
         if (input_fd != -1 && input_fd != STDIN_FILENO)
         {
             dup2(input_fd, STDIN_FILENO);
         }
 
-        // Handle pipe output
         if (output_fd != -1 && output_fd != STDOUT_FILENO)
         {
             dup2(output_fd, STDOUT_FILENO);
         }
 
-        // Handle file redirections (these override pipe redirections)
         if (cmd->input_file)
         {
             handle_input_redirection(cmd->input_file);
@@ -540,14 +327,11 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
             handle_output_redirection(cmd->output_file, cmd->append_mode);
         }
 
-        // Execute built-in command
         int result = execute_builtin(cmd);
 
-        // Flush output
         fflush(stdout);
         fflush(stderr);
 
-        // Restore original stdin/stdout
         dup2(saved_stdin, STDIN_FILENO);
         dup2(saved_stdout, STDOUT_FILENO);
         close(saved_stdin);
@@ -556,7 +340,6 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
         return result;
     }
 
-    // For external commands, fork and exec
     pid_t pid = fork();
     if (pid == -1)
     {
@@ -566,12 +349,8 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
 
     if (pid == 0)
     {
-        // Child process
-
-        // Set process group - first process in pipeline creates new group
         if (pgid == 0)
         {
-            // First process in pipeline - create new process group
             if (setpgid(0, 0) == -1)
             {
                 perror("setpgid failed");
@@ -580,7 +359,6 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
         }
         else
         {
-            // Join existing process group
             if (setpgid(0, pgid) == -1)
             {
                 perror("setpgid failed");
@@ -588,7 +366,6 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
             }
         }
 
-        // Handle pipe input
         if (input_fd != -1 && input_fd != STDIN_FILENO)
         {
             if (dup2(input_fd, STDIN_FILENO) == -1)
@@ -598,7 +375,6 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
             }
         }
 
-        // Handle pipe output
         if (output_fd != -1 && output_fd != STDOUT_FILENO)
         {
             if (dup2(output_fd, STDOUT_FILENO) == -1)
@@ -608,7 +384,6 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
             }
         }
 
-        // Handle file redirections (these override pipe redirections)
         if (cmd->input_file)
         {
             if (handle_input_redirection(cmd->input_file) == -1)
@@ -624,13 +399,11 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
             }
         }
 
-        // Close all pipe file descriptors in child
         if (input_fd != -1 && input_fd != STDIN_FILENO)
             close(input_fd);
         if (output_fd != -1 && output_fd != STDOUT_FILENO)
             close(output_fd);
 
-        // Prepare arguments for execvp
         char **args = malloc((cmd->arg_count + 2) * sizeof(char *));
         if (!args)
         {
@@ -645,23 +418,17 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
         }
         args[cmd->arg_count + 1] = NULL;
 
-        // Execute the command
         execvp(cmd->command, args);
 
-        // If execvp returns, there was an error
         perror("execvp failed");
         free(args);
         exit(1);
     }
 
-    return pid; // Return PID for parent to wait on
+    return pid;
 }
-// Execute pipeline of commands
-// Replace your execute_pipeline function in src/redirection.c
 
-// Replace your execute_pipeline function in src/redirection.c
-
-// Execute pipeline of commands
+// Updated execute_pipeline function without DEBUG lines
 int execute_pipeline(command_pipeline_t *pipeline)
 {
     if (!pipeline || pipeline->cmd_count == 0)
@@ -674,11 +441,13 @@ int execute_pipeline(command_pipeline_t *pipeline)
     {
         if (pipeline->is_background)
         {
-            return execute_command_background(&pipeline->commands[0]);
+            int result = execute_command_background(&pipeline->commands[0]);
+            return result;
         }
         else
         {
-            return execute_command_with_redirection(&pipeline->commands[0]);
+            int result = execute_command_with_redirection(&pipeline->commands[0]);
+            return result;
         }
     }
 
@@ -763,9 +532,8 @@ int execute_pipeline(command_pipeline_t *pipeline)
     // Close remaining pipe ends
     for (int i = 0; i < pipeline->cmd_count - 1; i++)
     {
-        close(pipes[i][1]); // Close any remaining write ends
-        if (i > 0)
-            close(pipes[i - 1][0]); // Close any remaining read ends
+        if (i == 0) close(pipes[i][0]); // Close read end of first pipe
+        free(pipes[i]);
     }
 
     int final_status = 0;
@@ -773,20 +541,18 @@ int execute_pipeline(command_pipeline_t *pipeline)
     // Handle background vs foreground execution
     if (pipeline->is_background)
     {
-        // For background pipelines, add the last process to job management
+        // For background pipelines, add the process group leader to job management
         // and don't wait for any processes
-        if (pids[pipeline->cmd_count - 1] > 0)
+        if (pgid > 0)
         {
-            // Build command string for job tracking
             char cmd_str[256] = {0};
             strncpy(cmd_str, pipeline->commands[0].command, sizeof(cmd_str) - 1);
             if (pipeline->cmd_count > 1)
             {
                 strncat(cmd_str, " | ...", sizeof(cmd_str) - strlen(cmd_str) - 1);
             }
-            add_background_job_running(pids[pipeline->cmd_count - 1], cmd_str);
+            add_background_job_running(pgid, cmd_str);
         }
-        // For background processes, we don't wait, so status is 0
         final_status = 0;
     }
     else
@@ -795,9 +561,8 @@ int execute_pipeline(command_pipeline_t *pipeline)
         if (pgid > 0)
         {
             g_foreground_pgid = pgid;
-            g_foreground_pid = pids[0]; // Use first process PID
+            g_foreground_pid = pgid; // Use process group leader PID
 
-            // Build command string for signal handling
             char cmd_str[256] = {0};
             strncpy(cmd_str, pipeline->commands[0].command, sizeof(cmd_str) - 1);
             if (pipeline->cmd_count > 1)
@@ -814,20 +579,30 @@ int execute_pipeline(command_pipeline_t *pipeline)
             if (pids[i] > 0)
             { // Only wait for external commands
                 int status;
-                pid_t result = waitpid(pids[i], &status, WUNTRACED);
-                if (result == -1 && errno != EINTR)
-                {
-                    perror("waitpid failed");
-                }
-                if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
-                {
-                    final_status = WEXITSTATUS(status);
-                }
-                if (WIFSTOPPED(status))
-                {
-                    // Process was stopped, handled by signal handler
-                    // final_status = 0;
-                    return 0;
+                pid_t result;
+
+                while (1) {
+                    result = waitpid(pids[i], &status, WUNTRACED);
+
+                    if (result == -1) {
+                        if (errno == EINTR) {
+                            if (g_foreground_pid == 0) {
+                                break;
+                            }
+                            continue;
+                        } else {
+                            perror("waitpid failed");
+                            break;
+                        }
+                    } else if (result == pids[i]) {
+                        if (WIFSTOPPED(status)) {
+                            break;
+                        }
+                        if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                            final_status = WEXITSTATUS(status);
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -839,19 +614,13 @@ int execute_pipeline(command_pipeline_t *pipeline)
     }
 
     // Cleanup
-    for (int i = 0; i < pipeline->cmd_count - 1; i++)
-    {
-        free(pipes[i]);
-    }
     free(pipes);
     free(pids);
 
     return final_status;
 }
-// part d
-//  Add this function to the end of src/redirection.c
 
-// Execute sequential commands (Part D.1)
+// Updated execute_sequential_commands function without DEBUG lines
 int execute_sequential_commands(sequential_commands_t *seq_cmds)
 {
     if (!seq_cmds || seq_cmds->pipeline_count == 0)
@@ -864,7 +633,6 @@ int execute_sequential_commands(sequential_commands_t *seq_cmds)
     // Execute each pipeline in sequence
     for (int i = 0; i < seq_cmds->pipeline_count; i++)
     {
-        // Execute the current pipeline
         int status = execute_pipeline(&seq_cmds->pipelines[i]);
 
         // Record if any command failed, but continue executing
@@ -872,15 +640,10 @@ int execute_sequential_commands(sequential_commands_t *seq_cmds)
         {
             overall_status = status;
         }
-
-        // Wait for current pipeline to complete before starting next
-        // (This is handled by execute_pipeline, but we ensure it here)
     }
 
     return overall_status;
 }
-
-// Add this function to src/redirection.c
 
 // Execute command in background
 int execute_command_background(parsed_command_t *cmd)
@@ -890,14 +653,12 @@ int execute_command_background(parsed_command_t *cmd)
         return -1;
     }
 
-    // Built-in commands cannot run in background (they need the shell context)
     if (is_builtin_command(cmd->command))
     {
         printf("Built-in command '%s' cannot run in background\n", cmd->command);
         return -1;
     }
 
-    // Fork for background execution
     pid_t pid = fork();
     if (pid == -1)
     {
@@ -907,10 +668,6 @@ int execute_command_background(parsed_command_t *cmd)
 
     if (pid == 0)
     {
-        // Child process
-
-        // Background processes should not have access to terminal input
-        // Redirect stdin to /dev/null
         int null_fd = open("/dev/null", O_RDONLY);
         if (null_fd != -1)
         {
@@ -918,7 +675,6 @@ int execute_command_background(parsed_command_t *cmd)
             close(null_fd);
         }
 
-        // Handle file redirections
         if (cmd->input_file)
         {
             if (handle_input_redirection(cmd->input_file) == -1)
@@ -935,7 +691,6 @@ int execute_command_background(parsed_command_t *cmd)
             }
         }
 
-        // Prepare arguments for execvp
         char **args = malloc((cmd->arg_count + 2) * sizeof(char *));
         if (!args)
         {
@@ -950,21 +705,17 @@ int execute_command_background(parsed_command_t *cmd)
         }
         args[cmd->arg_count + 1] = NULL;
 
-        // Execute the command
         execvp(cmd->command, args);
 
-        // If execvp returns, there was an error
         perror("execvp failed");
         free(args);
         exit(1);
     }
     else
     {
-        // Parent process - add to background jobs and don't wait
         char full_command[256] = {0};
         strncpy(full_command, cmd->command, sizeof(full_command) - 1);
         
-        // Add arguments to the command string
         for (int i = 0; i < cmd->arg_count; i++) {
             strncat(full_command, " ", sizeof(full_command) - strlen(full_command) - 1);
             strncat(full_command, cmd->args[i], sizeof(full_command) - strlen(full_command) - 1);

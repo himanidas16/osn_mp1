@@ -1,4 +1,3 @@
-// Replace the entire main.c file
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,51 +83,28 @@ int main(void) {
                     log_add_command(line);
                 }
 
+                // Check for sequential commands first (contains semicolon)
                 if (strchr(line, ';') != NULL) {
                     sequential_commands_t seq_cmds;
                     if (parse_sequential_commands(line, &seq_cmds) == 0) {
                         execute_sequential_commands(&seq_cmds);
                         cleanup_sequential_commands(&seq_cmds);
                     } else {
-                        if (strchr(line, '|') != NULL) {
-                            command_pipeline_t pipeline;
-                            if (parse_pipeline(line, &pipeline) == 0) {
-                                execute_pipeline(&pipeline);
-                                cleanup_pipeline(&pipeline);
-                            } else {
-                                parsed_command_t cmd;
-                                if (parse_command_with_redirection(line, &cmd) == 0) {
-                                    execute_command_with_redirection(&cmd);
-                                    cleanup_parsed_command(&cmd);
-                                } else {
-                                    execute_command(line);
-                                }
-                            }
-                        } else {
-                            parsed_command_t cmd;
-                            if (parse_command_with_redirection(line, &cmd) == 0) {
-                                execute_command_with_redirection(&cmd);
-                                cleanup_parsed_command(&cmd);
-                            } else {
-                                execute_command(line);
-                            }
-                        }
+                        printf("Invalid Syntax!\n");
                     }
-                } else if (strchr(line, '|') != NULL || strchr(line, '&') != NULL) {
+                }
+                // Check for pipelines or background commands (contains pipe or &, but no semicolon)
+                else if (strchr(line, '|') != NULL || strchr(line, '&') != NULL) {
                     command_pipeline_t pipeline;
                     if (parse_pipeline(line, &pipeline) == 0) {
                         execute_pipeline(&pipeline);
                         cleanup_pipeline(&pipeline);
                     } else {
-                        parsed_command_t cmd;
-                        if (parse_command_with_redirection(line, &cmd) == 0) {
-                            execute_command_with_redirection(&cmd);
-                            cleanup_parsed_command(&cmd);
-                        } else {
-                            execute_command(line);
-                        }
+                        printf("Invalid Syntax!\n");
                     }
-                } else {
+                }
+                // Check for simple redirection (contains < or >, but no semicolon, pipe, or &)
+                else if (strchr(line, '<') != NULL || strchr(line, '>') != NULL) {
                     parsed_command_t cmd;
                     if (parse_command_with_redirection(line, &cmd) == 0) {
                         execute_command_with_redirection(&cmd);
@@ -136,6 +112,10 @@ int main(void) {
                     } else {
                         execute_command(line);
                     }
+                }
+                // Simple command (no special characters)
+                else {
+                    execute_command(line);
                 }
             }
         }
