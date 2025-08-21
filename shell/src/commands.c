@@ -8,13 +8,13 @@
 #include "shell.h"
 #include "commands.h"
 #include <signal.h> // Include this header for struct sigaction
-
+#include "redirection.h"
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>     // Add this line
 #include <sys/types.h> // Add this line
-
+#include "parser.h"   
 // Helper function to trim whitespace
 static char *trim_whitespace(char *str)
 {
@@ -167,6 +167,7 @@ int execute_hop(char *args)
 // Add this check after the activities command check:
 
 // Main command execution function
+// Main command execution function
 int execute_command(const char *input)
 {
     if (!input || strlen(input) == 0)
@@ -273,11 +274,22 @@ int execute_command(const char *input)
         return result;
     }
 
-    // For now, other commands do nothing (will implement later)
-    free(input_copy);
-    return 0;
+    // Execute external command
+    parsed_command_t external_cmd;
+    if (parse_command_with_redirection(input, &external_cmd) == 0)
+    {
+        int result = execute_command_with_redirection(&external_cmd);
+        cleanup_parsed_command(&external_cmd);
+        free(input_copy);
+        return result;
+    }
+    else
+    {
+        // If parsing fails, just ignore the command
+        free(input_copy);
+        return 0;
+    }
 }
-
 // reveal
 
 // Helper function to check if a file is hidden (starts with .)
