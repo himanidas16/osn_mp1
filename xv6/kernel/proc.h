@@ -104,11 +104,19 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  uint64 creation_time;        // Process creation time (for FCFS scheduling)
-  // For CFS - ADD THESE NEW FIELDS:
-  int nice;                    // Nice value (-20 to 19, default 0)
-  uint64 vruntime;            // Virtual runtime
-  uint64 weight;              // Process weight based on nice value
-  int time_slice;             // Current time slice
-  int ticks_used;             // Ticks used in current slice
+
+  // Scheduling fields
+  int ctime;                   // Creation time (for FCFS)
+  int vruntime;               // Virtual runtime (for CFS) 
+  int rtime;                  // Total running time
+  int weight;                 // Process weight (for CFS)
+  int nice;                   // Nice value (for CFS)
+
+  // ADD THESE NEW MLFQ FIELDS:
+  int queue_level;            // Current queue level (0-3)
+  int time_slice_used;        // Time used in current slice
+  int last_scheduled;         // Last time this process was scheduled
+  int queue_entry_time;       // When process entered current queue (for FIFO within queue)
+  int preempted;              // Flag: was this process preempted?
+  int total_preemptions;      // Count of times preempted
 };

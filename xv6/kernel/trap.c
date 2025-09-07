@@ -161,29 +161,20 @@ kerneltrap()
   w_sstatus(sstatus);
 }
 
-void
-clockintr()
-{
-  acquire(&tickslock);
-  ticks++;
-  
-#ifdef SCHEDULER_CFS
-  // CFS time slice handling
-  struct proc *p = myproc();
-  if(p) {
-    p->ticks_used++;
-    // Update vruntime: vruntime += (1024 / weight) * ticks
-    p->vruntime += (1024 * 1) / p->weight;
-    
-    // Check if time slice is exhausted
-    if(p->ticks_used >= p->time_slice) {
-      yield(); // Preempt the process
-    }
+void clockintr() {
+  if(cpuid() == 0){
+    acquire(&tickslock);
+    ticks++;
+    wakeup(&ticks);
+    release(&tickslock);
   }
-#endif
-  
-  wakeup(&ticks);
-  release(&tickslock);
+
+  #ifdef SCHEDULER_MLFQ
+  check_starvation_prevention();
+  check_preemption();  // Add this line
+  #endif
+
+  w_stimecmp(r_time() + 1000000);
 }
 
 // check if it's an external interrupt or software interrupt,

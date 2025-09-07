@@ -48,6 +48,4 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
 void* malloc(uint);
 void free(void*);
 
-// uint64 getreadcount(void);
 int getreadcount(void);
-// int sleep(int);

@@ -60,6 +60,13 @@ OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
+
+# Add scheduler support
+ifndef SCHEDULER
+SCHEDULER := RR
+endif
+
+CFLAGS += -DSCHEDULER_$(SCHEDULER)
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
 CFLAGS += -ffreestanding
@@ -81,17 +88,6 @@ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
 
-
-
-#changes
-# Add scheduler support
-ifndef SCHEDULER
-SCHEDULER := RR
-endif
-
-CFLAGS += -DSCHEDULER_$(SCHEDULER) 
-
-##############
 LDFLAGS = -z max-page-size=4096
 
 $K/kernel: $(OBJS) $K/kernel.ld
@@ -154,9 +150,16 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_readcount\
-    $U/_fcfstest\
+	$U/_schedtest\
+	$U/_simpletest\
+	$U/_schedulertest\
+	$U/_mlfqtest\
+	$U/_preempttest\
+	$U/_fullmlfqtest\
+	$U/_starvationtest\
+	$U/_longtest\
+	$U/_q3test
 
-	
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
 

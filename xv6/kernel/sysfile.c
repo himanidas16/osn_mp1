@@ -15,7 +15,6 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
-// Add this global variable after the includes
 uint64 total_bytes_read = 0;
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -87,10 +86,6 @@ sys_read(void)
   // Track bytes read - only count successful reads
   if(result > 0) {
     total_bytes_read += result;
-    // Handle overflow by wrapping to 0
-    if(total_bytes_read < result) {
-      total_bytes_read = 0;
-    }
   }
   
   return result;
@@ -520,9 +515,12 @@ sys_pipe(void)
   }
   return 0;
 }
-// Add this function at the end of kernel/sysfile.c
+
+
+
 uint64
 sys_getreadcount(void)
 {
   return total_bytes_read;
 }
+

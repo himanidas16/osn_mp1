@@ -105,8 +105,5 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
-// uint64
-// sys_getreadcount(void)
-// {
-//   return 0;   // temporary; will return the real counter soon
-// }
+
+
