@@ -7,6 +7,7 @@
 #include "shell.h"
 #include "prompt.h"
 #include <sys/stat.h>
+/* ############## LLM Generated Code Begins ############## */
 
 static char s_user[LOGIN_NAME_MAX] = "user";
 static char s_host[256] = "host";
@@ -17,11 +18,9 @@ static void cache_identity(void) {
         strncpy(s_user, pw->pw_name, sizeof s_user - 1);
         s_user[sizeof s_user - 1] = '\0';
     } else {
-        const char *u = getenv("USER");
-        if (u && u[0]) { 
-            strncpy(s_user, u, sizeof s_user - 1); 
-            s_user[sizeof s_user - 1] = '\0'; 
-        }
+        // Q4: Don't use bash environment variables
+        strncpy(s_user, "user", sizeof(s_user) - 1);
+        s_user[sizeof(s_user) - 1] = '\0';
     }
     
     if (gethostname(s_host, sizeof s_host) != 0 || !s_host[0]) {
@@ -55,12 +54,15 @@ static void tilde_path(const char *cwd, const char *home, char *out, size_t outl
         return;
     }
     
-    // Check if current directory is under home directory
+    // Check if current directory is under home directory (subdirectory only)
     if (cl > hl && strncmp(cwd, home, hl) == 0 && cwd[hl] == '/') {
         snprintf(out, outlen, "~%s", cwd + hl);
-    } else {
-        snprintf(out, outlen, "%s", cwd);
+        return;
     }
+    
+    // REMOVE the ancestor check completely - don't show ~ for parent directories
+    // Just show the full path for everything else
+    snprintf(out, outlen, "%s", cwd);
 }
 
 int prompt_build(char *buf, size_t buflen) {
@@ -78,3 +80,4 @@ int prompt_build(char *buf, size_t buflen) {
     int n = snprintf(buf, buflen, "<%s@%s:%s> ", s_user, s_host, shown);
     return (n < 0 || (size_t)n >= buflen) ? -1 : 0;
 }
+/* ############## LLM Generated Code Ends ################ */

@@ -1,5 +1,6 @@
 #ifndef REDIRECTION_H
 #define REDIRECTION_H
+/* ############## LLM Generated Code Begins ############## */
 
 #include "parser.h"  // Include parser.h to get the type definitions
 
@@ -22,3 +23,4 @@ int handle_input_redirection(const char *filename);
 int handle_output_redirection(const char *filename, int append_mode);
 
 #endif
+/* ############## LLM Generated Code Ends ################ */

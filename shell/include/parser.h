@@ -1,5 +1,6 @@
 #ifndef PARSER_H
 #define PARSER_H
+/* ############## LLM Generated Code Begins ############## */
 
 // Structure to hold parsed command information
 typedef struct {
@@ -32,5 +33,5 @@ int parse_sequential_commands(const char *input, sequential_commands_t *seq_cmds
 void cleanup_parsed_command(parsed_command_t *cmd);
 void cleanup_pipeline(command_pipeline_t *pipeline);
 void cleanup_sequential_commands(sequential_commands_t *seq_cmds);
-
+/* ############## LLM Generated Code Ends ################ */
 #endif

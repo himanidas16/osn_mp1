@@ -9,6 +9,7 @@
 #include "../include/redirection.h"
 #include "../include/shell.h"
 #include "../include/commands.h"
+/* ############## LLM Generated Code Begins ############## */
 
 // Handle input redirection (Part C.1)
 int handle_input_redirection(const char *filename)
@@ -62,7 +63,7 @@ int handle_output_redirection(const char *filename, int append_mode)
 
     if (output_fd == -1)
     {
-        perror("Failed to open output file");
+        printf("Unable to create file for writing\n");
         return -1;
     }
 
@@ -253,7 +254,7 @@ int execute_command_with_redirection(parsed_command_t *cmd)
 
         execvp(cmd->command, args);
 
-        perror("execvp failed");
+        printf("Command not found!\n");
         free(args);
         exit(1);
     }
@@ -262,7 +263,18 @@ int execute_command_with_redirection(parsed_command_t *cmd)
         g_foreground_pid = pid;
         g_foreground_pgid = pid;
 
-        strncpy(g_foreground_command, cmd->command, sizeof(g_foreground_command) - 1);
+        // strncpy(g_foreground_command, cmd->command, sizeof(g_foreground_command) - 1);
+        // Build full command string with arguments
+char full_cmd[256] = {0};
+strncpy(full_cmd, cmd->command, sizeof(full_cmd) - 1);
+for (int i = 0; i < cmd->arg_count; i++) {
+    strncat(full_cmd, " ", sizeof(full_cmd) - strlen(full_cmd) - 1);
+    strncat(full_cmd, cmd->args[i], sizeof(full_cmd) - strlen(full_cmd) - 1);
+}
+strncpy(g_foreground_command, full_cmd, sizeof(g_foreground_command) - 1);
+g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
+
+
         g_foreground_command[sizeof(g_foreground_command) - 1] = '\0';
 
         int status;
@@ -420,7 +432,7 @@ static int execute_pipeline_command(parsed_command_t *cmd, int input_fd, int out
 
         execvp(cmd->command, args);
 
-        perror("execvp failed");
+        printf("Command not found!\n");
         free(args);
         exit(1);
     }
@@ -530,11 +542,12 @@ int execute_pipeline(command_pipeline_t *pipeline)
     }
 
     // Close remaining pipe ends
-    for (int i = 0; i < pipeline->cmd_count - 1; i++)
-    {
-        if (i == 0) close(pipes[i][0]); // Close read end of first pipe
-        free(pipes[i]);
-    }
+   for (int i = 0; i < pipeline->cmd_count - 1; i++)
+{
+    close(pipes[i][0]); // Close read end of each pipe
+    close(pipes[i][1]); // Close write end of each pipe (if not already closed)
+    free(pipes[i]);
+}
 
     int final_status = 0;
 
@@ -634,6 +647,10 @@ int execute_sequential_commands(sequential_commands_t *seq_cmds)
     for (int i = 0; i < seq_cmds->pipeline_count; i++)
     {
         int status = execute_pipeline(&seq_cmds->pipelines[i]);
+        
+        // Add explicit flushing to separate stderr from stdout
+        fflush(stderr);
+        fflush(stdout);
 
         // Record if any command failed, but continue executing
         if (status != 0)
@@ -707,7 +724,7 @@ int execute_command_background(parsed_command_t *cmd)
 
         execvp(cmd->command, args);
 
-        perror("execvp failed");
+        printf("Command not found!\n");
         free(args);
         exit(1);
     }
@@ -725,3 +742,4 @@ int execute_command_background(parsed_command_t *cmd)
         return 0;
     }
 }
+/* ############## LLM Generated Code Ends ################ */

@@ -1,17 +1,7 @@
-diff --git a/.vscode/settings.json b/.vscode/settings.json
-new file mode 100644
-index 0000000..eefe74f
---- /dev/null
-+++ b/.vscode/settings.json
-@@ -0,0 +1,5 @@
-+{
-+    "files.associations": {
-+        "mutex": "c"
-+    }
-+}
-\ No newline at end of file
+#LLM GENERATED CODE BEGINS HERE 
+
 diff --git a/Makefile b/Makefile
-index 2d5f9e4..1a7fa58 100644
+index 2d5f9e4..1fdb69c 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -59,7 +59,14 @@ LD = $(TOOLPREFIX)ld
@@ -30,20 +20,55 @@ index 2d5f9e4..1a7fa58 100644
  CFLAGS += -MD
  CFLAGS += -mcmodel=medany
  CFLAGS += -ffreestanding
-@@ -142,6 +149,16 @@ UPROGS=\
- 	$U/_logstress\
- 	$U/_forphan\
- 	$U/_dorphan\
+@@ -122,6 +129,36 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
+ # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
+ .PRECIOUS: %.o
+ 
++# UPROGS=\
++# 	$U/_cat\
++# 	$U/_echo\
++# 	$U/_forktest\
++# 	$U/_grep\
++# 	$U/_init\
++# 	$U/_kill\
++# 	$U/_ln\
++# 	$U/_ls\
++# 	$U/_mkdir\
++# 	$U/_rm\
++# 	$U/_sh\
++# 	$U/_stressfs\
++# 	$U/_usertests\
++# 	$U/_grind\
++# 	$U/_wc\
++# 	$U/_zombie\
++# 	$U/_logstress\
++# 	$U/_forphan\
++# 	$U/_dorphan\
++# 	$U/_readcount\
++# 	$U/_schedtest\
++# 	$U/_simpletest\
++# 	$U/_schedulertest\
++# 	$U/_mlfqtest\
++# 	$U/_preempttest\
++# 	$U/_fullmlfqtest\
++# 	$U/_starvationtest\
++# 	$U/_longtest\
++# 	$U/_q3test
+ UPROGS=\
+ 	$U/_cat\
+ 	$U/_echo\
+@@ -139,9 +176,11 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
+-	$U/_logstress\
+-	$U/_forphan\
+-	$U/_dorphan\
 +	$U/_readcount\
-+	$U/_schedtest\
-+	$U/_simpletest\
-+	$U/_schedulertest\
-+	$U/_mlfqtest\
-+	$U/_preempttest\
-+	$U/_fullmlfqtest\
-+	$U/_starvationtest\
-+	$U/_longtest\
-+	$U/_q3test
++	$U/_schedulertest
++
++
++
  
  fs.img: mkfs/mkfs README $(UPROGS)
  	mkfs/mkfs fs.img README $(UPROGS)
@@ -94,7 +119,7 @@ index 18d0dd0..139dcc9 100644
  };
  
 diff --git a/kernel/proc.c b/kernel/proc.c
-index 9d6cf3f..5c84871 100644
+index 9d6cf3f..ef51544 100644
 --- a/kernel/proc.c
 +++ b/kernel/proc.c
 @@ -15,6 +15,9 @@ struct proc *initproc;
@@ -107,7 +132,7 @@ index 9d6cf3f..5c84871 100644
  extern void forkret(void);
  static void freeproc(struct proc *p);
  
-@@ -29,40 +32,126 @@ struct spinlock wait_lock;
+@@ -29,40 +32,140 @@ struct spinlock wait_lock;
  // Allocate a page for each process's kernel stack.
  // Map it high in memory, followed by an invalid
  // guard page.
@@ -188,8 +213,24 @@ index 9d6cf3f..5c84871 100644
 +}
 +
 +// Check if starvation prevention is needed (every 48 ticks)
++// Check if starvation prevention is needed (every 48 ticks)
 +void check_starvation_prevention() {
 +  static int last_boost = 0;
++  
++  // First check if there are any user processes running at all
++  int user_processes = 0;
++  for (struct proc *p = proc; p < &proc[NPROC]; p++) {
++    acquire(&p->lock);
++    if (p->state != UNUSED && p->pid > 2) {  // Exclude init and shell
++      user_processes++;
++    }
++    release(&p->lock);
++  }
++  
++  // Only proceed if there are user processes
++  if (user_processes == 0) {
++    return;  // No user processes, no need for starvation prevention
++  }
 +  
 +  // Check every tick, but only act every 48 ticks
 +  if (ticks - last_boost >= 48) {
@@ -215,8 +256,6 @@ index 9d6cf3f..5c84871 100644
 +    }
 +  }
 +}
-+
-+
 +
  // initialize the proc table.
 -void
@@ -249,7 +288,7 @@ index 9d6cf3f..5c84871 100644
  {
    int id = r_tp();
    return id;
-@@ -70,7 +159,7 @@ cpuid()
+@@ -70,7 +173,7 @@ cpuid()
  
  // Return this CPU's cpu struct.
  // Interrupts must be disabled.
@@ -258,7 +297,7 @@ index 9d6cf3f..5c84871 100644
  mycpu(void)
  {
    int id = cpuid();
-@@ -79,7 +168,7 @@ mycpu(void)
+@@ -79,7 +182,7 @@ mycpu(void)
  }
  
  // Return the current struct proc *, or zero if none.
@@ -267,7 +306,7 @@ index 9d6cf3f..5c84871 100644
  myproc(void)
  {
    push_off();
-@@ -89,11 +178,10 @@ myproc(void)
+@@ -89,11 +192,10 @@ myproc(void)
    return p;
  }
  
@@ -281,7 +320,7 @@ index 9d6cf3f..5c84871 100644
    acquire(&pid_lock);
    pid = nextpid;
    nextpid = nextpid + 1;
-@@ -106,14 +194,14 @@ allocpid()
+@@ -106,14 +208,14 @@ allocpid()
  // If found, initialize state required to run in the kernel,
  // and return with p->lock held.
  // If there are no free procs, or a memory allocation fails, return 0.
@@ -299,7 +338,7 @@ index 9d6cf3f..5c84871 100644
        goto found;
      } else {
        release(&p->lock);
-@@ -125,8 +213,26 @@ found:
+@@ -125,8 +227,26 @@ found:
    p->pid = allocpid();
    p->state = USED;
  
@@ -327,7 +366,7 @@ index 9d6cf3f..5c84871 100644
      freeproc(p);
      release(&p->lock);
      return 0;
-@@ -134,7 +240,8 @@ found:
+@@ -134,7 +254,8 @@ found:
  
    // An empty user page table.
    p->pagetable = proc_pagetable(p);
@@ -337,7 +376,7 @@ index 9d6cf3f..5c84871 100644
      freeproc(p);
      release(&p->lock);
      return 0;
-@@ -155,10 +262,10 @@ found:
+@@ -155,10 +276,10 @@ found:
  static void
  freeproc(struct proc *p)
  {
@@ -351,7 +390,7 @@ index 9d6cf3f..5c84871 100644
      proc_freepagetable(p->pagetable, p->sz);
    p->pagetable = 0;
    p->sz = 0;
-@@ -180,23 +287,25 @@ proc_pagetable(struct proc *p)
+@@ -180,23 +301,25 @@ proc_pagetable(struct proc *p)
  
    // An empty page table.
    pagetable = uvmcreate();
@@ -382,7 +421,7 @@ index 9d6cf3f..5c84871 100644
      uvmunmap(pagetable, TRAMPOLINE, 1, 0);
      uvmfree(pagetable, 0);
      return 0;
-@@ -207,8 +316,7 @@ proc_pagetable(struct proc *p)
+@@ -207,8 +330,7 @@ proc_pagetable(struct proc *p)
  
  // Free a process's page table, and free the
  // physical memory it refers to.
@@ -392,7 +431,7 @@ index 9d6cf3f..5c84871 100644
  {
    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
    uvmunmap(pagetable, TRAPFRAME, 1, 0);
-@@ -216,14 +324,13 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
+@@ -216,14 +338,13 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
  }
  
  // Set up first user process.
@@ -409,7 +448,7 @@ index 9d6cf3f..5c84871 100644
    p->cwd = namei("/");
  
    p->state = RUNNABLE;
-@@ -233,18 +340,21 @@ userinit(void)
+@@ -233,18 +354,21 @@ userinit(void)
  
  // Shrink user memory by n bytes.
  // Return 0 on success, -1 on failure.
@@ -436,7 +475,7 @@ index 9d6cf3f..5c84871 100644
      sz = uvmdealloc(p->pagetable, sz, sz + n);
    }
    p->sz = sz;
-@@ -253,20 +363,21 @@ growproc(int n)
+@@ -253,20 +377,21 @@ growproc(int n)
  
  // Create a new process, copying the parent.
  // Sets up child kernel stack to return as if from fork() system call.
@@ -462,7 +501,7 @@ index 9d6cf3f..5c84871 100644
      freeproc(np);
      release(&np->lock);
      return -1;
-@@ -280,8 +391,8 @@ kfork(void)
+@@ -280,8 +405,8 @@ kfork(void)
    np->trapframe->a0 = 0;
  
    // increment reference counts on open file descriptors.
@@ -473,7 +512,7 @@ index 9d6cf3f..5c84871 100644
        np->ofile[i] = filedup(p->ofile[i]);
    np->cwd = idup(p->cwd);
  
-@@ -304,13 +415,14 @@ kfork(void)
+@@ -304,13 +429,14 @@ kfork(void)
  
  // Pass p's abandoned children to init.
  // Caller must hold wait_lock.
@@ -492,7 +531,7 @@ index 9d6cf3f..5c84871 100644
        pp->parent = initproc;
        wakeup(initproc);
      }
-@@ -320,17 +432,18 @@ reparent(struct proc *p)
+@@ -320,17 +446,18 @@ reparent(struct proc *p)
  // Exit the current process.  Does not return.
  // An exited process remains in the zombie state
  // until its parent calls wait().
@@ -516,7 +555,7 @@ index 9d6cf3f..5c84871 100644
        struct file *f = p->ofile[fd];
        fileclose(f);
        p->ofile[fd] = 0;
-@@ -349,7 +462,7 @@ kexit(int status)
+@@ -349,7 +476,7 @@ kexit(int status)
  
    // Parent might be sleeping in wait().
    wakeup(p->parent);
@@ -525,7 +564,7 @@ index 9d6cf3f..5c84871 100644
    acquire(&p->lock);
  
    p->xstate = status;
-@@ -364,8 +477,7 @@ kexit(int status)
+@@ -364,8 +491,7 @@ kexit(int status)
  
  // Wait for a child process to exit and return its pid.
  // Return -1 if this process has no children.
@@ -535,7 +574,7 @@ index 9d6cf3f..5c84871 100644
  {
    struct proc *pp;
    int havekids, pid;
-@@ -373,20 +485,25 @@ kwait(uint64 addr)
+@@ -373,20 +499,25 @@ kwait(uint64 addr)
  
    acquire(&wait_lock);
  
@@ -567,7 +606,7 @@ index 9d6cf3f..5c84871 100644
              release(&pp->lock);
              release(&wait_lock);
              return -1;
-@@ -401,61 +518,358 @@ kwait(uint64 addr)
+@@ -401,61 +532,358 @@ kwait(uint64 addr)
      }
  
      // No point waiting if we don't have any children.
@@ -646,7 +685,11 @@ index 9d6cf3f..5c84871 100644
 +
 +    // Find the highest priority level with runnable processes
 +    for (p = proc; p < &proc[NPROC]; p++) {
-+      acquire(&p->lock);
+       acquire(&p->lock);
+-      if(p->state == RUNNABLE) {
+-        // Switch to chosen process.  It is the process's job
+-        // to release its lock and then reacquire it
+-        // before jumping back to us.
 +      if (p->state == RUNNABLE && p->queue_level < highest_priority) {
 +        highest_priority = p->queue_level;
 +      }
@@ -744,11 +787,7 @@ index 9d6cf3f..5c84871 100644
 +    // First pass: count runnable processes
 +    for (p = proc; p < &proc[NPROC]; p++)
 +    {
-       acquire(&p->lock);
--      if(p->state == RUNNABLE) {
--        // Switch to chosen process.  It is the process's job
--        // to release its lock and then reacquire it
--        // before jumping back to us.
++      acquire(&p->lock);
 +      if (p->state == RUNNABLE)
 +      {
 +        runnable_count++;
@@ -959,7 +998,7 @@ index 9d6cf3f..5c84871 100644
    }
  }
  
-@@ -466,19 +880,18 @@ scheduler(void)
+@@ -466,19 +894,18 @@ scheduler(void)
  // be proc->intena and proc->noff, but that would
  // break in the few places where a lock is held but
  // there's no process.
@@ -984,7 +1023,7 @@ index 9d6cf3f..5c84871 100644
      panic("sched interruptible");
  
    intena = mycpu()->intena;
-@@ -487,8 +900,7 @@ sched(void)
+@@ -487,8 +914,7 @@ sched(void)
  }
  
  // Give up the CPU for one scheduling round.
@@ -994,7 +1033,7 @@ index 9d6cf3f..5c84871 100644
  {
    struct proc *p = myproc();
    acquire(&p->lock);
-@@ -499,8 +911,7 @@ yield(void)
+@@ -499,8 +925,7 @@ yield(void)
  
  // A fork child's very first scheduling by scheduler()
  // will swtch to forkret.
@@ -1004,7 +1043,7 @@ index 9d6cf3f..5c84871 100644
  {
    extern char userret[];
    static int first = 1;
-@@ -509,7 +920,8 @@ forkret(void)
+@@ -509,7 +934,8 @@ forkret(void)
    // Still holding p->lock from scheduler.
    release(&p->lock);
  
@@ -1014,7 +1053,7 @@ index 9d6cf3f..5c84871 100644
      // File system initialization must be run in the context of a
      // regular process (e.g., because it calls sleep), and thus cannot
      // be run from main().
-@@ -521,8 +933,9 @@ forkret(void)
+@@ -521,8 +947,9 @@ forkret(void)
  
      // We can invoke kexec() now that file system is initialized.
      // Put the return value (argc) of kexec into a0.
@@ -1026,7 +1065,7 @@ index 9d6cf3f..5c84871 100644
        panic("exec");
      }
    }
-@@ -536,11 +949,10 @@ forkret(void)
+@@ -536,11 +963,10 @@ forkret(void)
  
  // Sleep on channel chan, releasing condition lock lk.
  // Re-acquires lk when awakened.
@@ -1040,7 +1079,7 @@ index 9d6cf3f..5c84871 100644
    // Must acquire p->lock in order to
    // change p->state and then call sched.
    // Once we hold p->lock, we can be
-@@ -548,7 +960,7 @@ sleep(void *chan, struct spinlock *lk)
+@@ -548,7 +974,7 @@ sleep(void *chan, struct spinlock *lk)
    // (wakeup locks p->lock),
    // so it's okay to release lk.
  
@@ -1049,7 +1088,7 @@ index 9d6cf3f..5c84871 100644
    release(lk);
  
    // Go to sleep.
-@@ -567,15 +979,17 @@ sleep(void *chan, struct spinlock *lk)
+@@ -567,15 +993,17 @@ sleep(void *chan, struct spinlock *lk)
  
  // Wake up all processes sleeping on channel chan.
  // Caller should hold the condition lock.
@@ -1072,7 +1111,7 @@ index 9d6cf3f..5c84871 100644
          p->state = RUNNABLE;
        }
        release(&p->lock);
-@@ -586,16 +1000,18 @@ wakeup(void *chan)
+@@ -586,16 +1014,18 @@ wakeup(void *chan)
  // Kill the process with the given pid.
  // The victim won't exit until it tries to return
  // to user space (see usertrap() in trap.c).
@@ -1096,7 +1135,7 @@ index 9d6cf3f..5c84871 100644
          // Wake process from sleep().
          p->state = RUNNABLE;
        }
-@@ -607,19 +1023,17 @@ kkill(int pid)
+@@ -607,19 +1037,17 @@ kkill(int pid)
    return -1;
  }
  
@@ -1119,7 +1158,7 @@ index 9d6cf3f..5c84871 100644
    acquire(&p->lock);
    k = p->killed;
    release(&p->lock);
-@@ -629,13 +1043,15 @@ killed(struct proc *p)
+@@ -629,13 +1057,15 @@ killed(struct proc *p)
  // Copy to either a user address, or kernel address,
  // depending on usr_dst.
  // Returns 0 on success, -1 on error.
@@ -1139,7 +1178,7 @@ index 9d6cf3f..5c84871 100644
      memmove((char *)dst, src, len);
      return 0;
    }
-@@ -644,14 +1060,16 @@ either_copyout(int user_dst, uint64 dst, void *src, uint64 len)
+@@ -644,14 +1074,16 @@ either_copyout(int user_dst, uint64 dst, void *src, uint64 len)
  // Copy from either a user address, or kernel address,
  // depending on usr_src.
  // Returns 0 on success, -1 on error.
@@ -1161,7 +1200,7 @@ index 9d6cf3f..5c84871 100644
      return 0;
    }
  }
-@@ -659,25 +1077,24 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
+@@ -659,25 +1091,24 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
  // Print a process listing to console.  For debugging.
  // Runs when user types ^P on console.
  // No lock to avoid wedging a stuck machine further.
@@ -1198,7 +1237,7 @@ index 9d6cf3f..5c84871 100644
        state = states[p->state];
      else
        state = "???";
-@@ -685,3 +1102,31 @@ procdump(void)
+@@ -685,3 +1116,31 @@ procdump(void)
      printf("\n");
    }
  }
@@ -1347,7 +1386,7 @@ index 3044d00..9fb4480 100644
 +
 +
 diff --git a/kernel/trap.c b/kernel/trap.c
-index a41cd69..da94f95 100644
+index a41cd69..e3b47f3 100644
 --- a/kernel/trap.c
 +++ b/kernel/trap.c
 @@ -44,7 +44,7 @@ usertrap(void)
@@ -1359,7 +1398,39 @@ index a41cd69..da94f95 100644
  
    struct proc *p = myproc();
    
-@@ -161,9 +161,7 @@ kerneltrap()
+@@ -81,8 +81,13 @@ usertrap(void)
+     kexit(-1);
+ 
+   // give up the CPU if this is a timer interrupt.
+-  if(which_dev == 2)
+-    yield();
++// give up the CPU if this is a timer interrupt.
++// BUT NOT for FCFS scheduler (which should be non-preemptive)
++if(which_dev == 2) {
++#ifndef SCHEDULER_FCFS
++  yield();
++#endif
++}
+ 
+   prepare_return();
+ 
+@@ -152,8 +157,13 @@ kerneltrap()
+   }
+ 
+   // give up the CPU if this is a timer interrupt.
+-  if(which_dev == 2 && myproc() != 0)
+-    yield();
++// give up the CPU if this is a timer interrupt.
++// BUT NOT for FCFS scheduler (which should be non-preemptive)
++if(which_dev == 2 && myproc() != 0) {
++#ifndef SCHEDULER_FCFS
++  yield();
++#endif
++}
+ 
+   // the yield() may have caused some traps to occur,
+   // so restore trap registers for use by kernelvec.S's sepc instruction.
+@@ -161,9 +171,7 @@ kerneltrap()
    w_sstatus(sstatus);
  }
  
@@ -1370,7 +1441,7 @@ index a41cd69..da94f95 100644
    if(cpuid() == 0){
      acquire(&tickslock);
      ticks++;
-@@ -171,9 +169,11 @@ clockintr()
+@@ -171,9 +179,11 @@ clockintr()
      release(&tickslock);
    }
  
@@ -1385,199 +1456,6 @@ index a41cd69..da94f95 100644
    w_stimecmp(r_time() + 1000000);
  }
  
-diff --git a/user/fullmlfqtest.c b/user/fullmlfqtest.c
-new file mode 100644
-index 0000000..8f8b91c
---- /dev/null
-+++ b/user/fullmlfqtest.c
-@@ -0,0 +1,89 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+very_long_process(int id)
-+{
-+  printf("Very long process %d starting\n", id);
-+  volatile int dummy = 0;
-+  
-+  // Much more intensive work to reach Queue 3
-+  for(int i = 0; i < 2000000; i++) {  // Increased from 200000
-+    dummy += i * i;
-+    for(int j = 0; j < 100; j++) {    // Added inner loop
-+      dummy += j;
-+    }
-+    if (i % 500000 == 0) {
-+      printf("Process %d still running (iteration %d)\n", id, i);
-+    }
-+  }
-+  
-+  printf("Very long process %d finished\n", id);
-+  exit(0);
-+}
-+
-+void
-+medium_process(int id)
-+{
-+  printf("Medium process %d starting\n", id);
-+  volatile int dummy = 0;
-+  
-+  // Medium work to reach Queue 2
-+  for(int i = 0; i < 100000; i++) {
-+    dummy += i * i;
-+  }
-+  
-+  printf("Medium process %d finished\n", id);
-+  exit(0);
-+}
-+
-+void
-+short_process(int id)
-+{
-+  printf("Short process %d starting\n", id);
-+  volatile int dummy = 0;
-+  
-+  for(int i = 0; i < 10000; i++) {
-+    dummy += i;
-+  }
-+  
-+  printf("Short process %d finished\n", id);
-+  exit(0);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("=== Complete MLFQ Feature Test ===\n");
-+  
-+  // Start multiple long processes to fill lower queues
-+  for(int i = 1; i <= 2; i++) {
-+    if(fork() == 0) {
-+      very_long_process(i);
-+    }
-+  }
-+  
-+  // Start medium processes
-+  for(int i = 3; i <= 4; i++) {
-+    if(fork() == 0) {
-+      medium_process(i);
-+    }
-+  }
-+  
-+  // Give time for processes to get demoted
-+  for(int i = 0; i < 10000000; i++);
-+  
-+  // Start high-priority process to demonstrate preemption
-+  if(fork() == 0) {
-+    short_process(5);
-+  }
-+  
-+  // Wait for all processes
-+  for(int i = 0; i < 5; i++) {
-+    wait(0);
-+  }
-+  
-+  printf("=== Complete test finished ===\n");
-+  exit(0);
-+}
-diff --git a/user/longtest.c b/user/longtest.c
-new file mode 100644
-index 0000000..ba1e77f
---- /dev/null
-+++ b/user/longtest.c
-@@ -0,0 +1,92 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+very_long_cpu_process(int id)
-+{
-+  printf("=== LONG Process %d: Starting (will reach Queue 3) ===\n", id);
-+  volatile int dummy = 0;
-+  
-+  // Much more intensive work to definitely reach Queue 3
-+  for(int i = 0; i < 100000000; i++) {  // 100 million iterations
-+    dummy += i * i;
-+    for(int j = 0; j < 10; j++) {  // Inner loop for more CPU time
-+      dummy += j * i;
-+    }
-+    
-+    // Print progress less frequently to reduce output clutter
-+    if(i % 20000000 == 0) {
-+      printf("LONG Process %d: %d0 million iterations (should be in lower queue)\n", 
-+             id, i/10000000);
-+    }
-+  }
-+  
-+  printf("=== LONG Process %d: FINISHED ===\n", id);
-+  exit(0);
-+}
-+
-+void
-+short_preempting_process(int id)
-+{
-+  printf("*** HIGH PRIORITY Process %d: Starting (should preempt) ***\n", id);
-+  volatile int dummy = 0;
-+  
-+  for(int i = 0; i < 500000; i++) {
-+    dummy += i;
-+  }
-+  
-+  printf("*** HIGH PRIORITY Process %d: FINISHED QUICKLY ***\n", id);
-+  exit(0);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("\n======================================\n");
-+  printf("MLFQ QUEUE 3 & PREEMPTION TEST\n");
-+  printf("======================================\n");
-+  
-+  // Start multiple long-running processes
-+  printf("Starting 3 VERY long CPU processes...\n");
-+  for(int i = 1; i <= 3; i++) {
-+    if(fork() == 0) {
-+      very_long_cpu_process(i);
-+    }
-+    
-+    // Small delay between process creation
-+    for(int j = 0; j < 3000000; j++);
-+  }
-+  
-+  printf("Letting processes run and get demoted to Queue 3...\n");
-+  
-+  // Let them run for a while to reach Queue 3
-+  for(int i = 0; i < 30000000; i++);
-+  
-+  printf("\n*** NOW STARTING HIGH PRIORITY PROCESS - Should preempt! ***\n");
-+  
-+  // Start high priority process (should preempt)
-+  if(fork() == 0) {
-+    short_preempting_process(99);
-+  }
-+  
-+  // Wait a bit more
-+  for(int i = 0; i < 10000000; i++);
-+  
-+  // Start another preempting process
-+  if(fork() == 0) {
-+    short_preempting_process(100);
-+  }
-+  
-+  printf("Waiting for all processes to complete...\n");
-+  
-+  // Wait for all processes
-+  for(int i = 0; i < 5; i++) {
-+    wait(0);
-+  }
-+  
-+  printf("\n======================================\n");
-+  printf("QUEUE 3 & PREEMPTION TEST COMPLETED\n");
-+  printf("======================================\n");
-+  exit(0);
-+}
 diff --git a/user/ls.c b/user/ls.c
 index da78748..39ab074 100644
 --- a/user/ls.c
@@ -1590,643 +1468,51 @@ index da78748..39ab074 100644
    return buf;
  }
  
-diff --git a/user/mlfqtest.c b/user/mlfqtest.c
-new file mode 100644
-index 0000000..8f025d3
---- /dev/null
-+++ b/user/mlfqtest.c
-@@ -0,0 +1,42 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+simple_work(int process_id)
-+{
-+  int start_time = uptime();
-+  volatile int dummy = 0;
-+
-+  printf("Process %d starting\n", process_id);
-+
-+  // Simple, finite workload
-+  for(int i = 0; i < 5000000; i++) {
-+    dummy += i;
-+  }
-+
-+  int end_time = uptime();
-+  printf("Process %d finished (duration: %d ticks)\n", 
-+         process_id, end_time - start_time);
-+  exit(0);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("=== Simple MLFQ Test ===\n");
-+
-+  for(int i = 1; i <= 3; i++) {
-+    if(fork() == 0) {
-+      simple_work(i);
-+    }
-+  }
-+
-+  // Wait for all children
-+  for(int i = 0; i < 3; i++) {
-+    wait(0);
-+  }
-+
-+  printf("=== All processes completed ===\n");
-+  exit(0);
-+}
-diff --git a/user/preempttest.c b/user/preempttest.c
-new file mode 100644
-index 0000000..21ed040
---- /dev/null
-+++ b/user/preempttest.c
-@@ -0,0 +1,62 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+long_running_process(int id)
-+{
-+  printf("Long-running process %d starting\n", id);
-+  volatile int dummy = 0;
-+
-+  // Long CPU-intensive work to get demoted to lower queues
-+  for(int i = 0; i < 50000; i++) {
-+    dummy += i * i;
-+    if (i % 10000 == 0) {
-+      printf("Process %d still running (iteration %d)\n", id, i);
-+    }
-+  }
-+
-+  printf("Long-running process %d finished\n", id);
-+  exit(0);
-+}
-+
-+void
-+short_process(int id)
-+{
-+  printf("Short process %d starting (should preempt!)\n", id);
-+  volatile int dummy = 0;
-+
-+  // Short work - should stay in high priority queue
-+  for(int i = 0; i < 1000; i++) {
-+    dummy += i;
-+  }
-+
-+  printf("Short process %d finished\n", id);
-+  exit(0);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("=== MLFQ Preemption Test ===\n");
-+
-+  // Start a long-running process first
-+  if(fork() == 0) {
-+    long_running_process(1);
-+  }
-+
-+  // Give it time to get demoted to lower queues
-+  for(int i = 0; i < 5000000; i++);
-+
-+  // Start a short process - should preempt the long one
-+  if(fork() == 0) {
-+    short_process(2);
-+  }
-+
-+  // Wait for both to complete
-+  wait(0);
-+  wait(0);
-+
-+  printf("=== Preemption test completed ===\n");
-+  exit(0);
-+}
-diff --git a/user/q3test.c b/user/q3test.c
-new file mode 100644
-index 0000000..74fc952
---- /dev/null
-+++ b/user/q3test.c
-@@ -0,0 +1,45 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+extreme_cpu_hog(int id)
-+{
-+  printf("CPU HOG %d: Starting - will definitely reach Queue 3\n", id);
-+  volatile long long dummy = 0;
-+  
-+  // Extreme CPU usage to guarantee Queue 3
-+  for(long long i = 0; i < 200000000LL; i++) {
-+    dummy += i * i * i;
-+    
-+    if(i % 50000000 == 0) {
-+      printf("CPU HOG %d: %lld0 million iterations\n", id, i/10000000);
-+    }
-+  }
-+  
-+  printf("CPU HOG %d: COMPLETED\n", id);
-+  exit(0);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("\n=== QUEUE 3 ROUND-ROBIN VERIFICATION ===\n");
-+  
-+  // Start 4 extreme CPU hogs
-+  for(int i = 1; i <= 4; i++) {
-+    printf("Starting CPU HOG %d\n", i);
-+    if(fork() == 0) {
-+      extreme_cpu_hog(i);
-+    }
-+  }
-+  
-+  printf("All CPU hogs started - they should reach Queue 3 and show round-robin\n");
-+  
-+  for(int i = 0; i < 4; i++) {
-+    wait(0);
-+  }
-+  
-+  printf("=== VERIFICATION COMPLETE ===\n");
-+  exit(0);
-+}
-diff --git a/user/readcount.c b/user/readcount.c
-new file mode 100644
-index 0000000..322c6f8
---- /dev/null
-+++ b/user/readcount.c
-@@ -0,0 +1,74 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+#include "kernel/fcntl.h"
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  int initial_count, final_count;
-+  int fd;
-+  char buffer[100];
-+  int bytes_read;
-+  
-+  printf("=== getreadcount() System Call Test ===\n");
-+  
-+  // Get initial read count
-+  initial_count = getreadcount();
-+  printf("Initial read count: %d\n", initial_count);
-+  
-+  // Create a test file with exactly 100 bytes
-+  fd = open("testfile.txt", O_CREATE | O_WRONLY);
-+  if(fd < 0) {
-+    printf("ERROR: Failed to create test file\n");
-+    exit(1);
-+  }
-+  
-+  // Write exactly 100 'A' characters to the file
-+  for(int i = 0; i < 100; i++) {
-+    if(write(fd, "A", 1) != 1) {
-+      printf("ERROR: Failed to write to test file\n");
-+      close(fd);
-+      exit(1);
-+    }
-+  }
-+  close(fd);
-+  printf("Created test file with 100 bytes\n");
-+  
-+  // Read 100 bytes from the file
-+  fd = open("testfile.txt", O_RDONLY);
-+  if(fd < 0) {
-+    printf("ERROR: Failed to open test file for reading\n");
-+    exit(1);
-+  }
-+  
-+  bytes_read = read(fd, buffer, 100);
-+  close(fd);
-+  
-+  if(bytes_read < 0) {
-+    printf("ERROR: Failed to read from test file\n");
-+    exit(1);
-+  }
-+  
-+  printf("Successfully read %d bytes from test file\n", bytes_read);
-+  
-+  // Get final read count
-+  final_count = getreadcount();
-+  printf("Final read count: %d\n", final_count);
-+  
-+  // Verify the increase
-+  int increase = final_count - initial_count;
-+  printf("Increase in read count: %d\n", increase);
-+  
-+  if(increase == bytes_read) {
-+    printf("✓ SUCCESS: Read count increased by exactly %d bytes\n", bytes_read);
-+  } else {
-+    printf("✗ FAILURE: Expected increase of %d, but got %d\n", bytes_read, increase);
-+  }
-+  
-+  // Clean up
-+  unlink("testfile.txt");
-+  
-+  printf("=== Test completed ===\n");
-+  exit(0);
-+}
-\ No newline at end of file
-diff --git a/user/schedtest.c b/user/schedtest.c
-new file mode 100644
-index 0000000..6f6a2ed
---- /dev/null
-+++ b/user/schedtest.c
-@@ -0,0 +1,68 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+cpu_intensive_task(int process_id, int duration)
-+{
-+  int start_time = uptime();
-+  int current_time;
-+  int count = 0;
-+  
-+  printf("Process %d starting at time %d\n", process_id, start_time);
-+  
-+  do {
-+    // CPU intensive loop
-+    for(int i = 0; i < 1000000; i++) {
-+      count++;
-+    }
-+    current_time = uptime();
-+  } while(current_time - start_time < duration);
-+  
-+  printf("Process %d finished at time %d (ran for %d ticks)\n", 
-+         process_id, current_time, current_time - start_time);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("=== FCFS Scheduler Test ===\n");
-+  printf("Creating 3 processes that should run in creation order\n");
-+  
-+  int pid1, pid2, pid3;
-+  
-+  // Create first process
-+  if((pid1 = fork()) == 0) {
-+    cpu_intensive_task(1, 20);  // Run for 20 ticks
-+    exit(0);
-+  }
-+  
-+  // Small delay to ensure different creation times
-+  for(int i = 0; i < 1000000; i++);
-+  
-+  // Create second process  
-+  if((pid2 = fork()) == 0) {
-+    cpu_intensive_task(2, 20);  // Run for 20 ticks
-+    exit(0);
-+  }
-+  
-+  // Small delay to ensure different creation times
-+  for(int i = 0; i < 1000000; i++);
-+  
-+  // Create third process
-+  if((pid3 = fork()) == 0) {
-+    cpu_intensive_task(3, 20);  // Run for 20 ticks
-+    exit(0);
-+  }
-+  
-+  // Parent waits for all children
-+  wait(0);
-+  wait(0);
-+  wait(0);
-+  
-+  printf("=== Test completed ===\n");
-+  printf("In FCFS: Process 1 should start first, then 2, then 3\n");
-+  printf("In Round Robin: Processes should interleave\n");
-+  
-+  exit(0);
-+}
-\ No newline at end of file
-diff --git a/user/schedulertest.c b/user/schedulertest.c
-new file mode 100644
-index 0000000..eecb75c
---- /dev/null
-+++ b/user/schedulertest.c
-@@ -0,0 +1,97 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+cpu_workload(int process_id, int work_amount)
-+{
-+  int start_time = uptime();
-+  volatile int dummy = 0;
-+
-+  printf("Process %d starting at time %d\n", process_id, start_time);
-+
-+  // Reduced workload - still enough to show queue behavior
-+  for(int i = 0; i < work_amount * 5; i++) {  // Reduced from 50 to 5
-+    dummy += i * i;
-+    // Smaller inner loop
-+    for(int j = 0; j < 1000; j++) {  // Reduced from 10000 to 1000
-+      dummy += j;
-+    }
-+  }
-+  dummy = dummy + 1;
-+
-+  int end_time = uptime();
-+  int running_time = end_time - start_time;
-+
-+  printf("Process %d finished at time %d (running time: %d ticks)\n", 
-+         process_id, end_time, running_time);
-+
-+  exit(running_time);
-+}
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("=== Scheduler Performance Test ===\n");
-+  printf("Creating 3 CPU-intensive processes\n");
-+  
-+  int start_time = uptime();
-+  int pid1, pid2, pid3;
-+  int status1, status2, status3;
-+  
-+  // Change from 100000000 to much smaller numbers:
-+if((pid1 = fork()) == 0) {
-+    cpu_workload(1, 1000);  // Changed from 100000000 to 1000
-+}
-+
-+// Small delay to ensure different creation times for FCFS
-+for(int i = 0; i < 1000000; i++);
-+
-+if((pid2 = fork()) == 0) {
-+    cpu_workload(2, 1000);  // Changed from 100000000 to 1000
-+}
-+
-+// Small delay to ensure different creation times for FCFS
-+for(int i = 0; i < 1000000; i++);
-+
-+if((pid3 = fork()) == 0) {
-+    cpu_workload(3, 1000);  // Changed from 100000000 to 1000
-+}
-+  
-+  // Parent waits for all children and collects running times
-+  wait(&status1);
-+  wait(&status2); 
-+  wait(&status3);
-+  
-+  int total_time = uptime() - start_time;
-+  
-+  printf("=== Performance Results ===\n");
-+  printf("Process 1 running time: %d ticks\n", status1);
-+  printf("Process 2 running time: %d ticks\n", status2);
-+  printf("Process 3 running time: %d ticks\n", status3);
-+  printf("Total completion time: %d ticks\n", total_time);
-+  
-+  // Calculate average times
-+  int avg_running = (status1 + status2 + status3) / 3;
-+  printf("Average running time: %d ticks\n", avg_running);
-+  
-+  // Waiting time = total_time - running_time for each process
-+  int waiting1 = total_time - status1;
-+  int waiting2 = total_time - status2;
-+  int waiting3 = total_time - status3;
-+  int avg_waiting = (waiting1 + waiting2 + waiting3) / 3;
-+  
-+  printf("Average waiting time: %d ticks\n", avg_waiting);
-+
-+    // ADD THIS MLFQ-SPECIFIC OUTPUT:
-+  #ifdef SCHEDULER_MLFQ
-+  printf("=== MLFQ Scheduler ===\n");
-+  printf("Expected: Processes should start in queue 0, move down as they use time slices\n");
-+  printf("Interactive processes should stay in higher queues\n");
-+  #endif
-+
-+  
-+  printf("=== Test completed ===\n");
-+  
-+  exit(0);
-+}
-\ No newline at end of file
-diff --git a/user/simpletest.c b/user/simpletest.c
-new file mode 100644
-index 0000000..0fe4786
---- /dev/null
-+++ b/user/simpletest.c
-@@ -0,0 +1,88 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+int
-+main(int argc, char *argv[])
-+{
-+  printf("=== Simple Scheduler Test ===\n");
-+  
-+  int pid1, pid2, pid3;
-+  int start_time = uptime();
-+  
-+  printf("Creating process 1...\n");
-+  if((pid1 = fork()) == 0) {
-+    int my_start = uptime();
-+    printf("Process 1 (PID %d) started at time %d\n", getpid(), my_start);
-+    
-+    // More CPU intensive work
-+    volatile int dummy = 0;
-+    for(int i = 0; i < 200000000; i++) {
-+      // busy work - force more computation
-+      dummy += i * i;
-+    }
-+    // Use dummy to prevent optimization
-+    dummy = dummy + 1;
-+    
-+    int my_end = uptime();
-+    printf("Process 1 (PID %d) finished at time %d (duration: %d)\n", 
-+           getpid(), my_end, my_end - my_start);
-+    exit(0);
-+  }
-+  
-+  // Delay to ensure different creation times
-+  for(int i = 0; i < 5000000; i++);
-+  
-+  printf("Creating process 2...\n");
-+  if((pid2 = fork()) == 0) {
-+    int my_start = uptime();
-+    printf("Process 2 (PID %d) started at time %d\n", getpid(), my_start);
-+    
-+    // More CPU intensive work
-+    volatile int dummy = 0;
-+    for(int i = 0; i < 200000000; i++) {
-+      // busy work - force more computation
-+      dummy += i * i;
-+    }
-+    // Use dummy to prevent optimization
-+    dummy = dummy + 1;
-+    
-+    int my_end = uptime();
-+    printf("Process 2 (PID %d) finished at time %d (duration: %d)\n", 
-+           getpid(), my_end, my_end - my_start);
-+    exit(0);
-+  }
-+  
-+  // Delay to ensure different creation times
-+  for(int i = 0; i < 5000000; i++);
-+  
-+  printf("Creating process 3...\n");
-+  if((pid3 = fork()) == 0) {
-+    int my_start = uptime();
-+    printf("Process 3 (PID %d) started at time %d\n", getpid(), my_start);
-+    
-+    // More CPU intensive work
-+    volatile int dummy = 0;
-+    for(int i = 0; i < 200000000; i++) {
-+      // busy work - force more computation
-+      dummy += i * i;
-+    }
-+    // Use dummy to prevent optimization
-+    dummy = dummy + 1;
-+    
-+    int my_end = uptime();
-+    printf("Process 3 (PID %d) finished at time %d (duration: %d)\n", 
-+           getpid(), my_end, my_end - my_start);
-+    exit(0);
-+  }
-+  
-+  // Parent waits for all children
-+  wait(0);
-+  wait(0);
-+  wait(0);
-+  
-+  int total_time = uptime() - start_time;
-+  printf("=== All processes completed in %d ticks ===\n", total_time);
-+  
-+  exit(0);
-+}
-\ No newline at end of file
-diff --git a/user/starvationtest.c b/user/starvationtest.c
-new file mode 100644
-index 0000000..8d07802
---- /dev/null
-+++ b/user/starvationtest.c
-@@ -0,0 +1,82 @@
-+#include "kernel/types.h"
-+#include "kernel/stat.h"
-+#include "user/user.h"
-+
-+void
-+cpu_intensive_process(int id)
-+{
-+  printf("CPU-intensive process %d starting\n", id);
-+  volatile int dummy = 0;
-+  
-+  // Very heavy workload to ensure processes get demoted and stay in lower queues
-+  for(int i = 0; i < 5000000; i++) {
-+    dummy += i * i;
-+    for(int j = 0; j < 50; j++) {
-+      dummy += j * i;
-+    }
-+    
-+    // Print progress every 1 million iterations
-+    if(i % 1000000 == 0) {
-+      printf("Process %d: iteration %d million\n", id, i/1000000);
-+    }
-+  }
-+  
-+  printf("CPU-intensive process %d finished\n", id);
-+  exit(0);
-+}
-+
-+// Add this function to user/starvationtest.c
-+void test_48_tick_timing() {
-+  printf("=== 48-Tick Starvation Prevention Verification ===\n");
-+  
-+  int start_time = uptime();
-+  printf("Test started at tick: %d\n", start_time);
-+  
-+  // Create processes that will demonstrate starvation prevention
-+  for(int i = 1; i <= 3; i++) {
-+    if(fork() == 0) {
-+      // Long CPU work to get demoted and trigger starvation prevention
-+      for(volatile long j = 0; j < 50000000L; j++) {
-+        if(j % 10000000 == 0) {
-+          printf("Process %d: %ldM iterations at tick %d\n", i, j/1000000, uptime());
-+        }
-+      }
-+      exit(0);
-+    }
-+  }
-+  
-+  // Parent waits and monitors
-+  for(int i = 0; i < 3; i++) {
-+    wait(0);
-+  }
-+  
-+  int end_time = uptime();
-+  printf("Test completed at tick: %d (duration: %d ticks)\n", end_time, end_time - start_time);
-+  printf("Expected to see starvation prevention every 48 ticks\n");
-+}
-+
-+int main(int argc, char *argv[]) {
-+  if(argc > 1 && strcmp(argv[1], "timing") == 0) {
-+    test_48_tick_timing();
-+  } else {
-+    printf("=== Starvation Prevention Test ===\n");
-+    printf("Starting multiple CPU-intensive processes to trigger starvation prevention...\n");
-+    
-+    // Start 3 CPU-intensive processes
-+    for(int i = 1; i <= 3; i++) {
-+      if(fork() == 0) {
-+        cpu_intensive_process(i);
-+      }
-+    }
-+    
-+    // Wait for all children to complete
-+    for(int i = 0; i < 3; i++) {
-+      wait(0);
-+    }
-+    
-+    printf("=== Starvation test completed ===\n");
-+  }
-+  exit(0);
-+}
-+
-+
+diff --git a/user/printf.c b/user/printf.c
+index 75546f4..bbc29b8 100644
+--- a/user/printf.c
++++ b/user/printf.c
+@@ -17,7 +17,7 @@ printint(int fd, long long xx, int base, int sgn)
+ {
+   char buf[20];
+   int i, neg;
+-  unsigned long long x;
++  uint x;
+ 
+   neg = 0;
+   if(sgn && xx < 0){
 diff --git a/user/ulib.c b/user/ulib.c
-index 6bc490e..a2f5a20 100644
+index 45fadb0..a2f5a20 100644
 --- a/user/ulib.c
 +++ b/user/ulib.c
-@@ -11,10 +11,9 @@
+@@ -9,12 +9,11 @@
+ // wrapper so that it's OK if main() does not call exit().
+ //
  void
- start()
+-start(int argc, char **argv)
++start()
  {
 -  int r;
-   extern int main();
--  r = main();
+-  extern int main(int argc, char **argv);
+-  r = main(argc, argv);
 -  exit(r);
++  extern int main();
 +  main();
 +  exit(0);
  }
  
  char*
 diff --git a/user/user.h b/user/user.h
-index ac84de9..7ea6ebf 100644
+index ac84de9..f1d2b62 100644
 --- a/user/user.h
 +++ b/user/user.h
-@@ -47,3 +47,5 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
+@@ -47,3 +47,6 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
  // umalloc.c
  void* malloc(uint);
  void free(void*);
 +
 +int getreadcount(void);
++// int sleep(int);
 \ No newline at end of file
 diff --git a/user/usys.pl b/user/usys.pl
 index c5d4c3a..eae94f4 100755
@@ -2238,3 +1524,6 @@ index c5d4c3a..eae94f4 100755
  entry("uptime");
 +entry("getreadcount");
 \ No newline at end of file
+
+
+#LLM GENERATED CODE ENDS HERE 

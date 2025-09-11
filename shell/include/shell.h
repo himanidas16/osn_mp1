@@ -1,6 +1,6 @@
 #ifndef SHELL_H
 #define SHELL_H
-
+/* ############## LLM Generated Code Begins ############## */
 #include <limits.h>
 #include <pwd.h>
 #include <stdio.h>
@@ -103,5 +103,8 @@ extern volatile sig_atomic_t sigtstp_received;
 int add_background_job_running(pid_t pid, const char *command);
 int add_background_job_stopped(pid_t pid, const char *command);
 
+extern int g_hop_called;
+
 
 #endif
+/* ############## LLM Generated Code Ends ################ */
